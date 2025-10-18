@@ -1,4 +1,4 @@
-const DEBUG = false;
+const DEBUG = true;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // (This is a free tier key so it doesn't allow for many requests)
@@ -2003,7 +2003,24 @@ Pebble.addEventListener("ready",
 
 Pebble.addEventListener("appmessage",
                         function(e) {
-                          if (DEBUG) console.log("Pebble App Message!");
+                          if (DEBUG) log_message("Pebble App Message!", JSON.stringify(e) );
+
+                          // Handle battery status updates from the watch
+                          if (e.payload !== undefined && e.payload.battery_percent !== undefined) {
+                            var batteryPercent = e.payload.battery_percent;
+                            var isCharging = e.payload.battery_charging === 1;
+
+                            if (DEBUG) {
+                              console.log('=== BATTERY STATUS UPDATE ===');
+                              console.log('Battery Percentage: ' + batteryPercent + '%');
+                              console.log('Charging State: ' + (isCharging ? 'CHARGING' : 'NOT CHARGING'));
+                              console.log('============================');
+                            }
+
+                            // TODO: In the future, send this data to a remote endpoint
+                            // For now, we just log it when DEBUG is enabled
+                          }
+
                           // Store 12/24hr setting passed from Pebble
                           if (e.payload !== undefined && e.payload.time_24hr !== undefined) {
                             time24hr = (e.payload.time_24hr == 1);

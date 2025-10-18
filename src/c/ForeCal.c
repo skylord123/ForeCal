@@ -74,6 +74,8 @@ static uint8_t retry_count_hourly = 0;
 static AppTimer *retry_timer = NULL;
 static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
+static uint8_t last_batt_percent = 255; // Initialize to invalid value to force first send
+static bool last_batt_charging = false;
 static time_t last_update_attempt;
 static bool qt_delay = false;
 #if (defined(PBL_HEALTH) && defined(PBL_COLOR))
@@ -121,6 +123,8 @@ enum MessageKey {
   QT_FETCH_WEATHER_KEY = 33,
   SHOW_WEEK_KEY = 34,
   SHOW_STEPS_KEY = 35,
+  BATTERY_PERCENT_KEY = 36,
+  BATTERY_CHARGING_KEY = 37,
   WEATHER_FETCHED_KEY = 99
 };
 
@@ -879,6 +883,25 @@ static void handle_bt_update(bool connected) {
   }
 }
 
+// Send battery status to JavaScript via AppMessage
+static void send_battery_status(uint8_t percent, bool charging) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Sending battery status to JS: %d%% (%s)",
+          percent, charging ? "Charging" : "Not Charging");
+
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Failed to create outbox iterator for battery status");
+    return;
+  }
+
+  dict_write_uint8(iter, BATTERY_PERCENT_KEY, percent);
+  dict_write_uint8(iter, BATTERY_CHARGING_KEY, charging ? 1 : 0);
+
+  app_message_outbox_send();
+}
+
 // Handle battery status updates
 static void handle_batt_update(BatteryChargeState batt_status) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Battery Update: %d%% (%s)", batt_status.charge_percent, 
@@ -901,12 +924,24 @@ static void handle_batt_update(BatteryChargeState batt_status) {
     }
   }
   
+  // Check if battery percentage or charging state has changed
+  if (batt_status.charge_percent != last_batt_percent ||
+      batt_status.is_charging != last_batt_charging) {
+
+    // Send battery status update to JavaScript
+    send_battery_status(batt_status.charge_percent, batt_status.is_charging);
+
+    // Update tracking variables
+    last_batt_percent = batt_status.charge_percent;
+    last_batt_charging = batt_status.is_charging;
+  }
+
   if (new_batt_level != last_batt_level) {
     if (batt_icon) {
       gbitmap_destroy(batt_icon);
       batt_icon = NULL;
     }
-    
+
     switch (new_batt_level) {
       case BATT_CHARGING:
         batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_CHARGE);
@@ -926,7 +961,7 @@ static void handle_batt_update(BatteryChargeState batt_status) {
       case BATT_NA:
         batt_icon = NULL;
     }
-    
+
     bitmap_layer_set_bitmap(batt_layer, batt_icon);
     layer_mark_dirty(bitmap_layer_get_layer(batt_layer));
     last_batt_level = new_batt_level;

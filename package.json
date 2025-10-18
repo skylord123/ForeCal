@@ -13,6 +13,8 @@
         "enableMultiJS": false,
         "messageKeys": {
             "auto_daymode": 14,
+            "battery_charging": 37,
+            "battery_percent": 36,
             "bt_vibes": 22,
             "cal_offset": 17,
             "city": 9,
