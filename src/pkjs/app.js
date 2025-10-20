@@ -1901,19 +1901,19 @@ function fetchNWSWeather(lat, lon) {
         condition = forecast.condition;
 
         if (DEBUG) {
-          console.log('Current Temp: ' + formatTempF(curr_temp));
-          console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
-          console.log('Sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
-          console.log('Forecast Day: ' + forecast_day);
-          console.log('Forecast Date: ' + forecast_date);
-          console.log('Low: ' + low);
-          console.log('High: ' + high);
-          console.log('Condition: ' + condition);
-          console.log('Icon: ' + icon);
-          console.log('Daymode: ' + daymode);
-          console.log('Auto Daymode: ' + auto_daymode);
-          console.log('Location Changed: ' + locChanged);
-          console.log('Wind Speed: ' + formatSpeedmph(windspeed));
+            console.log('Current Temp: ' + formatTempF(curr_temp));
+            console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
+            console.log('Sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
+            console.log('Forecast Day: ' + forecast_day);
+            console.log('Forecast Date: ' + forecast_date);
+            console.log('Low: ' + low);
+            console.log('High: ' + high);
+            console.log('Condition: ' + condition);
+            console.log('Icon: ' + icon);
+            console.log('Daymode: ' + daymode);
+            console.log('Auto Daymode: ' + auto_daymode);
+            console.log('Location Changed: ' + locChanged);
+            console.log('Wind Speed: ' + formatSpeedmph(windspeed));
         }
 
         // Send the data to the Pebble
@@ -1994,70 +1994,63 @@ function fetchNWSWeather(lat, lon) {
   }
 }
 
-Pebble.addEventListener("ready",
-                        function(e) {
-                          if (DEBUG) console.log("JS Ready");
-                          //localStorage.clear();
-                          loadSettings();
-                        });
+Pebble.addEventListener("appmessage", function(e) {
+  if (DEBUG) log_message("Pebble App Message!", JSON.stringify(e) );
 
-Pebble.addEventListener("appmessage",
-                        function(e) {
-                          if (DEBUG) log_message("Pebble App Message!", JSON.stringify(e) );
+  // Handle battery status updates from the watch
+    if (e.payload !== undefined && e.payload.battery_percent !== undefined) {
+        var batteryPercent = e.payload.battery_percent;
+        var isCharging = e.payload.battery_charging === 1;
 
-                          // Handle battery status updates from the watch
-                          if (e.payload !== undefined && e.payload.battery_percent !== undefined) {
-                            var batteryPercent = e.payload.battery_percent;
-                            var isCharging = e.payload.battery_charging === 1;
+        if (DEBUG) {
+            console.log('=== BATTERY STATUS UPDATE ===');
+            console.log('Battery Percentage: ' + batteryPercent + '%');
+            console.log('Charging State: ' + (isCharging ? 'CHARGING' : 'NOT CHARGING'));
+            console.log('============================');
+        }
 
-                            if (DEBUG) {
-                              console.log('=== BATTERY STATUS UPDATE ===');
-                              console.log('Battery Percentage: ' + batteryPercent + '%');
-                              console.log('Charging State: ' + (isCharging ? 'CHARGING' : 'NOT CHARGING'));
-                              console.log('============================');
-                            }
+        // TODO: In the future, send this data to a remote endpoint
+        // For now, we just log it when DEBUG is enabled
+    }
 
-                            // TODO: In the future, send this data to a remote endpoint
-                            // For now, we just log it when DEBUG is enabled
-                          }
+    // Store 12/24hr setting passed from Pebble
+    if (e.payload !== undefined && e.payload.time_24hr !== undefined) {
+        time24hr = (e.payload.time_24hr == 1);
+        localStorage.time24hr = time24hr;
+        if (DEBUG) {
+            console.log('Payload Time 24hr: ' + e.payload.time_24hr);
+            console.log('Cfg Time 24hr: ' + time24hr);
+        }
+    }
 
-                          // Store 12/24hr setting passed from Pebble
-                          if (e.payload !== undefined && e.payload.time_24hr !== undefined) {
-                            time24hr = (e.payload.time_24hr == 1);
-                            localStorage.time24hr = time24hr;
-                            if (DEBUG) {
-                              console.log('Payload Time 24hr: ' + e.payload.time_24hr);
-                              console.log('Cfg Time 24hr: ' + time24hr);
-                            }
-                          }
+    // Trigger location and weather fetch on command from Pebble
+    refreshWeather();
+});
 
-                          // Trigger location and weather fetch on command from Pebble
-                          refreshWeather();
-                        });
+Pebble.addEventListener("showConfiguration", function() {
+    log_message('Opening config page...');
+    Pebble.openURL(clay.generateUrl());
+});
 
-Pebble.addEventListener("showConfiguration",
-                         function() {
-                           if (DEBUG) console.log("Showing Settings...");
-                           Pebble.openURL(clay.generateUrl());
-                          });
+Pebble.addEventListener("webviewclosed", function(e) {
+    if (DEBUG) console.log("Webview closed");
+    if (e.response) {
+        if (DEBUG) console.log("Raw settings returned: " + e.response);
+        try {
+            JSON.parse(e.response); // Test for Pebble app difference (iOS doesn't need decodeURIComponent, Android does)
+            config = clay.getSettings(e.response);
+        } catch(ex) {
+            config = clay.getSettings(decodeURIComponent(e.response));
+        }
+        log_message('User changed settings: ' + JSON.stringify(config));
+        saveSettings();
+    } else {
+        if (DEBUG) console.log("Settings cancelled");
+    }
+});
 
-Pebble.addEventListener("webviewclosed",
-                         function(e) {
-                           if (DEBUG) console.log("Webview closed");
-                           if (e.response) {
-                             if (DEBUG) console.log("Raw settings returned: " + e.response);
-                             try {
-                               JSON.parse(e.response); // Test for Pebble app difference (iOS doesn't need decodeURIComponent, Android does)
-                               config = clay.getSettings(e.response);
-                             } catch(ex) {
-                               config = clay.getSettings(decodeURIComponent(e.response));
-                             }
-                             if (DEBUG) console.log("Settings returned: " + JSON.stringify(config));
-                             saveSettings();
-                           }
-                           else {
-                             if (DEBUG) console.log("Settings cancelled");
-                           }
-                         });
-
-
+Pebble.addEventListener("ready", function(e) {
+    if (DEBUG) console.log("JS Ready");
+    //localStorage.clear();
+    loadSettings();
+});
