@@ -36,6 +36,8 @@
             "qt_fetch_weather": 33,
             "qt_start_hour": 28,
             "qt_start_min": 29,
+            "request_battery": 38,
+            "request_weather_sync": 39,
             "show_batt": 19,
             "show_bt": 18,
             "show_steps": 35,

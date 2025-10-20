@@ -1994,6 +1994,56 @@ function fetchNWSWeather(lat, lon) {
   }
 }
 
+// Request current battery data from the watch
+function requestBatteryUpdate() {
+  if (DEBUG) log_message('Requesting battery update from watch');
+
+  Pebble.sendAppMessage({
+    "request_battery": 1
+  });
+}
+
+// Send battery data to webhook endpoint
+function sendBatteryWebhook(batteryPercent, isCharging) {
+  // Check if webhook URL is configured in settings
+  if (!config.WebhookURL || config.WebhookURL === '') {
+    if (DEBUG) log_message('Webhook URL not configured, skipping battery webhook');
+    return;
+  }
+
+  if (DEBUG) {
+    log_message('Sending battery data to webhook');
+    console.log('Webhook URL: ' + config.WebhookURL);
+    console.log('Battery: ' + batteryPercent + '%, Charging: ' + (isCharging ? 'Yes' : 'No'));
+  }
+
+  var payload = {
+    battery_percent: batteryPercent,
+    is_charging: isCharging,
+    timestamp: new Date().toISOString()
+  };
+
+  var req = new XMLHttpRequest();
+  req.open('POST', config.WebhookURL, true);
+  req.setRequestHeader('Content-Type', 'application/json');
+
+  req.onload = function() {
+    if (req.readyState === 4) {
+      if (req.status === 200 || req.status === 201) {
+        if (DEBUG) log_message('Battery webhook sent successfully');
+      } else {
+        console.warn('Battery webhook failed with status: ' + req.status);
+      }
+    }
+  };
+
+  req.onerror = function() {
+    console.warn('Battery webhook request error');
+  };
+
+  req.send(JSON.stringify(payload));
+}
+
 Pebble.addEventListener("appmessage", function(e) {
   if (DEBUG) log_message("Pebble App Message!", JSON.stringify(e) );
 
@@ -2009,8 +2059,8 @@ Pebble.addEventListener("appmessage", function(e) {
             console.log('============================');
         }
 
-        // TODO: In the future, send this data to a remote endpoint
-        // For now, we just log it when DEBUG is enabled
+        // Send battery data to webhook if configured
+        sendBatteryWebhook(batteryPercent, isCharging);
     }
 
     // Store 12/24hr setting passed from Pebble
@@ -2023,8 +2073,11 @@ Pebble.addEventListener("appmessage", function(e) {
         }
     }
 
-    // Trigger location and weather fetch on command from Pebble
-    refreshWeather();
+    // Trigger location and weather fetch only if explicitly requested
+    if (e.payload !== undefined && e.payload.request_weather_sync !== undefined && e.payload.request_weather_sync === 1) {
+        if (DEBUG) log_message('Weather sync explicitly requested');
+        refreshWeather();
+    }
 });
 
 Pebble.addEventListener("showConfiguration", function() {
@@ -2033,8 +2086,9 @@ Pebble.addEventListener("showConfiguration", function() {
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {
-    if (DEBUG) console.log("Webview closed");
+    log_message('Webview closed');
     if (e.response) {
+        log_message("Raw response: ")
         if (DEBUG) console.log("Raw settings returned: " + e.response);
         try {
             JSON.parse(e.response); // Test for Pebble app difference (iOS doesn't need decodeURIComponent, Android does)
@@ -2044,13 +2098,17 @@ Pebble.addEventListener("webviewclosed", function(e) {
         }
         log_message('User changed settings: ' + JSON.stringify(config));
         saveSettings();
+
+        // Request fresh battery data from the watch after settings are saved
+        // This will trigger the webhook with current battery information
+        requestBatteryUpdate();
     } else {
         if (DEBUG) console.log("Settings cancelled");
     }
 });
 
 Pebble.addEventListener("ready", function(e) {
-    if (DEBUG) console.log("JS Ready");
+    log_message("JS Ready");
     //localStorage.clear();
     loadSettings();
 });

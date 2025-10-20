@@ -125,6 +125,8 @@ enum MessageKey {
   SHOW_STEPS_KEY = 35,
   BATTERY_PERCENT_KEY = 36,
   BATTERY_CHARGING_KEY = 37,
+  REQUEST_BATTERY_KEY = 38,
+  REQUEST_WEATHER_SYNC_KEY = 39,
   WEATHER_FETCHED_KEY = 99
 };
 
@@ -522,6 +524,9 @@ static void disable_steps_display() {
 }
 #endif
 
+// Forward declaration for send_battery_status
+static void send_battery_status(uint8_t percent, bool charging);
+
 // Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   //APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
@@ -699,7 +704,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         retry_count = 0;
         if (retry_timer != NULL) app_timer_cancel(retry_timer);
         last_error = false;
-        
+
         // Record the time of the successful update as the time when the update started
         if (last_update_attempt == 0) {
           // If there is no update start time, use now (without seconds)
@@ -709,6 +714,15 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         s_savedata.last_update = last_update_attempt;
       }
       last_update_attempt = 0;
+      break;
+    case REQUEST_BATTERY_KEY:
+      // Phone is requesting current battery status
+      // Only respond if the value changed from 0 to 1 (new request)
+      if (new_tuple->value->uint8 == 1 && (old_tuple == NULL || old_tuple->value->uint8 == 0)) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Battery status requested by phone");
+        BatteryChargeState batt_state = battery_state_service_peek();
+        send_battery_status(batt_state.charge_percent, batt_state.is_charging);
+      }
       break;
     default:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
@@ -1383,6 +1397,7 @@ static void window_load(Window *window) {
     TupletInteger(QT_END_MIN_KEY, s_savedata.qt_end_min),
     TupletInteger(QT_BT_VIBES_KEY, s_savedata.qt_bt_vibes),
     TupletInteger(QT_FETCH_WEATHER_KEY, s_savedata.qt_fetch_weather),
+    TupletInteger(REQUEST_BATTERY_KEY, 0),
     TupletInteger(WEATHER_FETCHED_KEY, 0)
   };
   
