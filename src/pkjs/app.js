@@ -1997,7 +1997,9 @@ function fetchNWSWeather(lat, lon) {
 // Request current battery data from the watch
 function requestBatteryUpdate() {
   if (DEBUG) log_message('Requesting battery update from watch');
-
+  Pebble.sendAppMessage({
+      "request_battery": 0
+  });
   Pebble.sendAppMessage({
     "request_battery": 1
   });
@@ -2005,16 +2007,27 @@ function requestBatteryUpdate() {
 
 // Send battery data to webhook endpoint
 function sendBatteryWebhook(batteryPercent, isCharging) {
-  // Check if webhook URL is configured in settings
-  if (!config.WebhookURL || config.WebhookURL === '') {
-    if (DEBUG) log_message('Webhook URL not configured, skipping battery webhook');
+  // Check if battery webhook is enabled
+  if (!config.BatteryWebhookEnabled) {
+    if (DEBUG) log_message('Battery webhook is disabled, skipping');
     return;
   }
 
+  // Check if webhook URL is configured in settings
+  if (!config.BatteryWebhookURL || config.BatteryWebhookURL === '') {
+    if (DEBUG) log_message('Battery webhook URL not configured, skipping battery webhook');
+    return;
+  }
+
+  // Get the HTTP method (default to POST if not specified)
+  var method = config.BatteryWebhookMethod || 'POST';
+
   if (DEBUG) {
     log_message('Sending battery data to webhook');
-    console.log('Webhook URL: ' + config.WebhookURL);
+    console.log('Webhook URL: ' + config.BatteryWebhookURL);
+    console.log('HTTP Method: ' + method);
     console.log('Battery: ' + batteryPercent + '%, Charging: ' + (isCharging ? 'Yes' : 'No'));
+    console.log('Using Bearer Auth: ' + (config.BatteryWebhookUseAuth ? 'Yes' : 'No'));
   }
 
   var payload = {
@@ -2024,8 +2037,14 @@ function sendBatteryWebhook(batteryPercent, isCharging) {
   };
 
   var req = new XMLHttpRequest();
-  req.open('POST', config.WebhookURL, true);
+  req.open(method, config.BatteryWebhookURL, true);
   req.setRequestHeader('Content-Type', 'application/json');
+
+  // Add Bearer token if authentication is enabled
+  if (config.BatteryWebhookUseAuth && config.BatteryWebhookAuthToken) {
+    req.setRequestHeader('Authorization', config.BatteryWebhookAuthToken);
+    if (DEBUG) log_message('Bearer token added to request');
+  }
 
   req.onload = function() {
     if (req.readyState === 4) {

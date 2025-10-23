@@ -265,6 +265,73 @@ module.exports = [
       }
     ]
   },
+
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Battery Webhook Settings"
+      },
+      {
+        "type": "toggle",
+        "appKey": "BatteryWebhookEnabled",
+        "label": "Enable Battery Webhook",
+        "description": "Send battery data to a webhook endpoint when settings are saved",
+        "defaultValue": false
+      },
+      {
+        "type": "input",
+        "appKey": "BatteryWebhookURL",
+        "defaultValue": "",
+        "label": "Webhook URL",
+        "description": "e.g., https://example.com/api/battery",
+        "attributes": {
+          "placeholder": "https://example.com/api/battery",
+          "limit": 500
+        }
+      },
+      {
+        "type": "select",
+        "appKey": "BatteryWebhookMethod",
+        "defaultValue": "POST",
+        "label": "HTTP Method",
+        "options": [
+          {
+            "label": "POST",
+            "value": "POST"
+          },
+          {
+            "label": "PUT",
+            "value": "PUT"
+          },
+          {
+            "label": "GET",
+            "value": "GET"
+          }
+        ]
+      },
+      {
+        "type": "toggle",
+        "appKey": "BatteryWebhookUseAuth",
+        "label": "Use Bearer Authentication",
+        "description": "Enable to include a Bearer token in the Authorization header",
+        "defaultValue": false
+      },
+      {
+        "type": "input",
+        "appKey": "BatteryWebhookAuthToken",
+        "defaultValue": "",
+        "label": "Bearer Token",
+        "description": "Your authentication token (only used if Bearer Authentication is enabled)",
+        "attributes": {
+          "placeholder": "your-bearer-token-here",
+          "limit": 500,
+          "type": "password"
+        }
+      }
+    ]
+  },
   
   {
     "type": "submit",
