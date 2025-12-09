@@ -1,15 +1,18 @@
 {
-    "author": "SeaPea",
+    "author": "Skylord",
+    "companyName": "skylar.tech",
+    "longName": "ForeCal Reloaded",
+    "shortName": "ForeCal Reloaded",
     "dependencies": {},
     "keywords": [],
-    "name": "forecal",
+    "name": "forecal-reloaded",
     "pebble": {
         "capabilities": [
             "location",
             "configurable",
             "health"
         ],
-        "displayName": "ForeCal",
+        "displayName": "ForeCal Reloaded",
         "enableMultiJS": false,
         "messageKeys": {
             "auto_daymode": 14,
@@ -212,7 +215,7 @@
             "chalk",
             "diorite"
         ],
-        "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
+        "uuid": "ea2feff6-54b9-4d02-b048-fa6fba8892c6",
         "watchapp": {
             "watchface": true
         }
