@@ -867,7 +867,7 @@ static void handle_tick(struct tm *t, TimeUnits units_changed) {
       } else {
         // Quiet time active. Record if next update was going to be during Quiet Time so we know to extend next update after Quiet Time by the duration
         // of the Quiet Time so that we don't have all users updating weather at the end of Quiet Time which may be left as default in many cases.
-        if (s_savedata.last_update != 0 || ((time(NULL) - s_savedata.last_update) >= update_interval_seconds))
+        if (s_savedata.last_update != 0 && ((time(NULL) - s_savedata.last_update) >= update_interval_seconds))
           qt_delay = true;
       }
     }
