@@ -817,8 +817,11 @@ function fetchNWSWeatherWithFallback(lat, lon) {
     if (reqPoints.readyState === 4) {
       if (reqPoints.status === 200) {
         // NWS is available for this location - proceed with full NWS fetch
+        // Pass fallback function so any subsequent NWS errors also fall back
         log_message('NWS points endpoint successful - location is within NWS coverage');
-        fetchNWSWeather(lat, lon);
+        fetchNWSWeather(lat, lon, function() {
+          fallbackToSelectedProvider(lat, lon);
+        });
       } else {
         // NWS not available (likely outside USA coverage) - fall back to selected provider
         log_message('NWS points endpoint failed (status: ' + reqPoints.status + ') - falling back to selected provider');
@@ -934,7 +937,10 @@ function refreshWeather() {
           // Success - check if location is in USA
           if (country_code === 'us') {
             log_message('Location is in USA - using NWS');
-            fetchNWSWeather(lat, lon);
+            // Pass fallback function so any NWS errors fall back to selected provider
+            fetchNWSWeather(lat, lon, function() {
+              fallbackToSelectedProvider(lat, lon);
+            });
           } else {
             log_message('Location is outside USA (country: ' + country_code + ') - falling back to selected provider');
             // Fall back to selected provider using geocoded coordinates
@@ -1707,7 +1713,8 @@ function fetchOpenMeteoWeather(lat, lon) {
 }
 
 // Fetch the weather data from the NWS (weather.gov) web service and transmit to Pebble
-function fetchNWSWeather(lat, lon) {
+// onError is an optional callback that will be called if any NWS request fails (for fallback to other providers)
+function fetchNWSWeather(lat, lon, onError) {
 
   if (DEBUG) console.log("### FETCHING NWS WEATHER ###");
   if (DEBUG) console.log('Using coordinates: ' + lat + ', ' + lon);
@@ -1719,6 +1726,21 @@ function fetchNWSWeather(lat, lon) {
   var forecast_day, forecast_date, high, low, icon, condition;
   var auto_daymode, windspeed;
   var today, tomorrow, forecast;
+
+  // Helper function to handle NWS errors - logs the error and calls fallback if available
+  function handleNWSError(errorMsg) {
+    console.warn(errorMsg);
+    if (typeof onError === 'function') {
+      log_message('NWS error occurred, falling back to selected provider: ' + errorMsg);
+      onError();
+    } else {
+      // No fallback available, show error to user
+      Pebble.sendAppMessage({
+        "city": errorMsg,
+        "weather_fetched": 0
+      });
+    }
+  }
 
   if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour ||
                                     (curr_time.getHours() == config.ForecastHour &&
@@ -1760,17 +1782,13 @@ function fetchNWSWeather(lat, lon) {
           // Parse points data JSON
           d = JSON.parse(reqPoints.responseText);
         } catch(ex) {
-          Pebble.sendAppMessage({
-            "city":"Err: Bad Data",
-            "weather_fetched":0});
+          handleNWSError("NWS Err: Bad Data");
           return;
         }
 
         // Validate data
         if (!d.properties) {
-          Pebble.sendAppMessage({
-            "city":"Err: Unknown Data",
-            "weather_fetched":0});
+          handleNWSError("NWS Err: Unknown Data");
           return;
         }
 
@@ -1781,16 +1799,12 @@ function fetchNWSWeather(lat, lon) {
                d.properties.relativeLocation.properties.city : "Unknown";
 
         if (!forecastUrl) {
-          Pebble.sendAppMessage({
-            "city":"Err: No Forecast URL",
-            "weather_fetched":0});
+          handleNWSError("NWS Err: No Forecast URL");
           return;
         }
 
         if (!stationsUrl) {
-          Pebble.sendAppMessage({
-            "city":"Err: No Stations URL",
-            "weather_fetched":0});
+          handleNWSError("NWS Err: No Stations URL");
           return;
         }
 
@@ -1821,10 +1835,7 @@ function fetchNWSWeather(lat, lon) {
         reqStations.send(null);
 
       } else {
-        console.warn("NWS Points Error: " + reqPoints.status);
-        Pebble.sendAppMessage({
-          "city":"NWS Err: " + reqPoints.status,
-          "weather_fetched":0});
+        handleNWSError("NWS Err: " + reqPoints.status);
       }
     }
   };
@@ -1936,10 +1947,7 @@ function fetchNWSWeather(lat, lon) {
   // Helper function to fetch forecast data (called after getting observation or on error)
   function fetchForecastData() {
     if (!forecastUrl) {
-      console.warn("No forecast URL available");
-      Pebble.sendAppMessage({
-        "city":"Err: No Forecast URL",
-        "weather_fetched":0});
+      handleNWSError("NWS Err: No Forecast URL");
       return;
     }
     reqForecast.open('GET', forecastUrl, true);
@@ -1958,17 +1966,13 @@ function fetchNWSWeather(lat, lon) {
           // Parse forecast data JSON
           d = JSON.parse(reqForecast.responseText);
         } catch(ex) {
-          Pebble.sendAppMessage({
-            "city":"Err: Bad Data",
-            "weather_fetched":0});
+          handleNWSError("NWS Err: Bad Forecast Data");
           return;
         }
 
         // Validate data
         if (!d.properties || !d.properties.periods || d.properties.periods.length === 0) {
-          Pebble.sendAppMessage({
-            "city":"Err: No Forecast Data",
-            "weather_fetched":0});
+          handleNWSError("NWS Err: No Forecast Data");
           return;
         }
 
@@ -2151,10 +2155,7 @@ function fetchNWSWeather(lat, lon) {
             "weather_fetched":1});
 
       } else {
-        console.warn("NWS Forecast Error: " + reqForecast.status);
-        Pebble.sendAppMessage({
-          "city":"NWS Err: " + reqForecast.status,
-          "weather_fetched":0});
+        handleNWSError("NWS Err: " + reqForecast.status);
       }
     }
   };

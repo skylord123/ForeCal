@@ -846,29 +846,61 @@ static void handle_tick(struct tm *t, TimeUnits units_changed) {
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
     
-    // Update the weather at the configured interval as long as quiet time is not active or set to continue fetching during quiet time
+    // Weather update logic - skip entirely during initial loading
     if (!loading) {
-      // Use configured interval (in minutes), default to 60 if not set
-      uint16_t update_interval_minutes = (s_savedata.weather_update_interval > 0) ? s_savedata.weather_update_interval : 60;
-      time_t update_interval_seconds = (time_t)(update_interval_minutes * 60);
+      time_t now = time(NULL);
 
-      if (s_savedata.qt_fetch_weather || !quiet_time_active()) {
-        if (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= update_interval_seconds + (qt_delay ? quiet_time_duration() : 0))) {
-          // Record the time when the update attempt started without seconds and request weather update
-          last_update_attempt = time(NULL);
-          last_update_attempt -= last_update_attempt % 60;
+      // Calculate update interval in seconds (default 60 minutes if not set)
+      uint16_t interval_minutes = (s_savedata.weather_update_interval > 0) ? s_savedata.weather_update_interval : 60;
+      time_t interval_seconds = (time_t)(interval_minutes * 60);
+
+      // Calculate time since last successful update
+      time_t time_since_update = (s_savedata.last_update > 0) ? (now - s_savedata.last_update) : interval_seconds;
+
+      // Check if we're currently in quiet time
+      bool in_quiet_time = quiet_time_active();
+
+      // Determine if quiet time blocks updates (only if qt_fetch_weather is false)
+      bool qt_blocks_update = in_quiet_time && !s_savedata.qt_fetch_weather;
+
+      // Check for special update triggers (midnight or forecast transition time)
+      bool is_midnight = (t->tm_hour == 0 && t->tm_min == 0);
+      bool is_forecast_transition = (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min);
+      bool special_trigger = is_midnight || is_forecast_transition;
+
+      // Check if interval-based update is due
+      bool interval_due = (time_since_update >= interval_seconds);
+
+      // Handle quiet time delay: if an update was skipped during quiet time,
+      // delay the next update by the quiet time duration to avoid all users
+      // updating simultaneously when quiet time ends
+      if (qt_delay && interval_due) {
+        time_t extended_interval = interval_seconds + quiet_time_duration();
+        interval_due = (time_since_update >= extended_interval);
+      }
+
+      // Decide whether to update
+      if (special_trigger) {
+        // Always update at midnight and forecast transition time
+        // These trigger forecast day switching without necessarily making web requests
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update: special trigger (%s)",
+                is_midnight ? "midnight" : "forecast transition");
+        last_update_attempt = now - (now % 60);
+        update_weather();
+        qt_delay = false;
+      } else if (interval_due) {
+        if (qt_blocks_update) {
+          // Update is due but quiet time is blocking - set flag to delay next update
+          APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update skipped: quiet time active");
+          qt_delay = true;
+        } else {
+          // Normal interval-based update
+          APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update: interval elapsed (%d min since last)",
+                  (int)(time_since_update / 60));
+          last_update_attempt = now - (now % 60);
           update_weather();
           qt_delay = false;
-        } else if ((t->tm_hour == 0 && t->tm_min == 0) ||
-                   (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min)) {
-          // Request weather update at midnight and the forecast today/tomorrow transition, which should just switch the forecast day without making web requests
-          update_weather();
         }
-      } else {
-        // Quiet time active. Record if next update was going to be during Quiet Time so we know to extend next update after Quiet Time by the duration
-        // of the Quiet Time so that we don't have all users updating weather at the end of Quiet Time which may be left as default in many cases.
-        if (s_savedata.last_update != 0 && ((time(NULL) - s_savedata.last_update) >= update_interval_seconds))
-          qt_delay = true;
       }
     }
     
