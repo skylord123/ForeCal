@@ -137,10 +137,11 @@ function shouldSyncTimeline() {
 
   var intervalMs = (parseInt(config.TimelineSyncInterval) || 15) * 60 * 1000;
   var elapsed = Date.now() - lastTimelineSync;
+  var graceMs = 1000; // allow timer jitter so exact-interval fires don't get skipped
 
-  log_message('Time since last sync: ' + Math.round(elapsed / 1000) + 's, interval: ' + (intervalMs / 1000) + 's');
+  log_message('Time since last sync: ' + Math.round(elapsed / 1000) + 's (' + elapsed + 'ms), interval: ' + (intervalMs / 1000) + 's, grace: ' + graceMs + 'ms');
 
-  if (elapsed < intervalMs) {
+  if (elapsed + graceMs < intervalMs) {
     log_message('Timeline sync skipped - not enough time elapsed');
     return false;
   }
@@ -2772,5 +2773,4 @@ Pebble.addEventListener("webviewclosed",
                              if (DEBUG) console.log("Settings cancelled");
                            }
                          });
-
 
