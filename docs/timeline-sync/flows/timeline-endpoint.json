@@ -1,0 +1,875 @@
+[
+    {
+        "id": "93cb8cbeade37bfb",
+        "type": "group",
+        "z": "forecal-timeline-endpoint-flow",
+        "name": "Scheduled Tasks",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "timeline-endpoint-init",
+            "timeline-endpoint-init-func",
+            "timeline-endpoint-cleanup-inject",
+            "timeline-endpoint-cleanup-func"
+        ],
+        "x": 64,
+        "y": 279,
+        "w": 492,
+        "h": 142
+    },
+    {
+        "id": "timeline-endpoint-init",
+        "type": "inject",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "93cb8cbeade37bfb",
+        "name": "Initialize on startup",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 210,
+        "y": 320,
+        "wires": [
+            [
+                "timeline-endpoint-init-func"
+            ]
+        ]
+    },
+    {
+        "id": "timeline-endpoint-init-func",
+        "type": "function",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "93cb8cbeade37bfb",
+        "name": "Init Global Context",
+        "func": "// Initialize timelinePins in global context if not exists\nconst pins = global.get(\"timelinePins\");\nif (!pins) {\n    global.set(\"timelinePins\", {});\n    node.log(\"Initialized empty timelinePins global context\");\n} else {\n    node.log(`Loaded ${Object.keys(pins).length} existing timeline pins`);\n}\n\nreturn null;",
+        "outputs": 0,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "timeline-endpoint-cleanup-inject",
+        "type": "inject",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "93cb8cbeade37bfb",
+        "name": "Cleanup every hour",
+        "props": [],
+        "repeat": "3600",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "",
+        "topic": "",
+        "x": 210,
+        "y": 380,
+        "wires": [
+            [
+                "timeline-endpoint-cleanup-func"
+            ]
+        ]
+    },
+    {
+        "id": "timeline-endpoint-cleanup-func",
+        "type": "function",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "93cb8cbeade37bfb",
+        "name": "Cleanup Old Pins",
+        "func": "// Cleanup pins older than 24 hours\nconst pins = global.get(\"timelinePins\") || {};\nconst now = Date.now();\nconst cutoff = now - (24 * 60 * 60 * 1000); // 24 hours ago\n\nconst updatedPins = {};\nlet removedCount = 0;\n\nfor (const [id, pin] of Object.entries(pins)) {\n    const pinTime = new Date(pin.time).getTime();\n    if (pinTime >= cutoff) {\n        updatedPins[id] = pin;\n    } else {\n        removedCount++;\n    }\n}\n\nif (removedCount > 0) {\n    global.set(\"timelinePins\", updatedPins);\n    node.log(`Scheduled cleanup removed ${removedCount} old pins`);\n}\n\nreturn null;",
+        "outputs": 0,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "0ff4ab82ca4c6851",
+        "type": "group",
+        "z": "forecal-timeline-endpoint-flow",
+        "name": "Timeline Endpoint using Rebble Web Services",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "timeline-endpoint-http-in",
+            "timeline-endpoint-auth-check",
+            "timeline-endpoint-get-pins",
+            "timeline-endpoint-http-response",
+            "timeline-endpoint-comment",
+            "614096f19c49dd88",
+            "fc5c84b035cc1fd2"
+        ],
+        "x": 54,
+        "y": 99,
+        "w": 1112,
+        "h": 142
+    },
+    {
+        "id": "timeline-endpoint-http-in",
+        "type": "http in",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "GET /api/timeline",
+        "url": "/api/timeline",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 200,
+        "wires": [
+            [
+                "timeline-endpoint-auth-check"
+            ]
+        ]
+    },
+    {
+        "id": "timeline-endpoint-auth-check",
+        "type": "function",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "Auth Check",
+        "func": "// Optional: Uncomment to enable Bearer token authentication\nconst EXPECTED_TOKEN = \"example-token\";\n\nconst authHeader = msg.req.headers.authorization || \"\";\nif (!authHeader.startsWith(\"Bearer \")) {\n    msg.statusCode = 401;\n    msg.payload = { error: \"Missing authorization header\" };\n    return [null, msg];\n}\n\nconst token = authHeader.substring(7);\nif (token !== EXPECTED_TOKEN) {\n    msg.statusCode = 403;\n    msg.payload = { error: \"Invalid token\" };\n    return [null, msg];\n}\n\n// Auth passed (or disabled), continue to get pins\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 200,
+        "wires": [
+            [
+                "614096f19c49dd88"
+            ],
+            [
+                "timeline-endpoint-http-response"
+            ]
+        ],
+        "outputLabels": [
+            "Authorized",
+            "Unauthorized"
+        ]
+    },
+    {
+        "id": "timeline-endpoint-get-pins",
+        "type": "function",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "Get & Filter Pins",
+        "func": "// Get pins from global context\nconst pins = global.get(\"timelinePins\") || {};\n\n// Define time window\nconst now = Date.now();\nconst pastCutoff = now - (24 * 60 * 60 * 1000);    // 24 hours ago\nconst futureCutoff = now + (7 * 24 * 60 * 60 * 1000); // 7 days from now\n\n// Filter and clean pins\nconst filteredPins = [];\nconst updatedPins = {};\nlet removedCount = 0;\n\nfor (const [id, pin] of Object.entries(pins)) {\n    const pinTime = new Date(pin.time).getTime();\n    \n    // Remove pins older than 24 hours\n    if (pinTime < pastCutoff) {\n        removedCount++;\n        continue;\n    }\n    \n    // Keep pin in storage\n    updatedPins[id] = pin;\n    \n    // Only return pins within the time window\n    if (pinTime <= futureCutoff) {\n        // Return pin without internal metadata\n        filteredPins.push({\n            id: pin.id,\n            time: pin.time,\n            layout: pin.layout,\n            actions: pin.actions\n        });\n    }\n}\n\n// Update global context (removes old pins)\nif (removedCount > 0) {\n    global.set(\"timelinePins\", updatedPins);\n    node.log(`Cleaned up ${removedCount} old timeline pins`);\n}\n\n// Sort by time\nfilteredPins.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());\n\n//msg.payload = { pins: filteredPins };\nmsg.payload = {\n    pins: filteredPins.concat(msg.payload || [])\n}\nmsg.headers = { \"Content-Type\": \"application/json\" };\n\nnode.log(`Returning ${filteredPins.length} timeline pins`);\n\nnode.status({ fill: \"green\", shape: \"dot\", text: new Date().toLocaleString() });\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 760,
+        "y": 160,
+        "wires": [
+            [
+                "timeline-endpoint-http-response",
+                "fc5c84b035cc1fd2"
+            ]
+        ]
+    },
+    {
+        "id": "timeline-endpoint-http-response",
+        "type": "http response",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "HTTP Response",
+        "statusCode": "",
+        "headers": {},
+        "x": 980,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "timeline-endpoint-comment",
+        "type": "comment",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "ForeCal Timeline Endpoint",
+        "info": "This flow provides a Node-RED endpoint that queries Rebble Web Services for a list of pins and returns them.\n\nThis restores Rebble Web Services remote timeline support for people using the new Core Devices mobile app.",
+        "x": 190,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "614096f19c49dd88",
+        "type": "pebble-timeline-list",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "",
+        "config": "e901bee3d7c92208",
+        "apiUrl": "null",
+        "apiUrlType": "jsonata",
+        "token": "null",
+        "tokenType": "jsonata",
+        "startTime": "payload.startTime",
+        "startTimeType": "msg",
+        "endTime": "payload.endTime",
+        "endTimeType": "msg",
+        "x": 550,
+        "y": 160,
+        "wires": [
+            [
+                "timeline-endpoint-get-pins"
+            ]
+        ]
+    },
+    {
+        "id": "fc5c84b035cc1fd2",
+        "type": "debug",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "0ff4ab82ca4c6851",
+        "name": "Timeline data response",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1010,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "e901bee3d7c92208",
+        "type": "pebble-timeline-config",
+        "name": "Emulated Timeline",
+        "apiUrl": ""
+    },
+    {
+        "id": "6c81ea7891323e18",
+        "type": "group",
+        "z": "forecal-timeline-endpoint-flow",
+        "name": "timeline testing",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "3b13dcf6236fdfdd",
+            "97acecc0c9f9d33b",
+            "836ccfdc77876f9a"
+        ],
+        "x": 68,
+        "y": 453,
+        "w": 924,
+        "h": 474
+    },
+    {
+        "id": "3b13dcf6236fdfdd",
+        "type": "group",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "6c81ea7891323e18",
+        "name": "Add basic timeline pin 1 hour in future",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "d617b39d02831885",
+            "2b8539868cf2f696",
+            "ec9ced2729eb34c6",
+            "92be880daefa1081",
+            "bafb2568fbdc7be6",
+            "85277056de77ba76"
+        ],
+        "x": 94,
+        "y": 479,
+        "w": 852,
+        "h": 142
+    },
+    {
+        "id": "d617b39d02831885",
+        "type": "pebble-timeline-add",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "3b13dcf6236fdfdd",
+        "name": "",
+        "config": "e901bee3d7c92208",
+        "apiUrl": "null",
+        "apiUrlType": "msg",
+        "token": "null",
+        "tokenType": "msg",
+        "pinId": "payload.id",
+        "pinIdType": "msg",
+        "time": "payload.time",
+        "timeType": "msg",
+        "duration": "payload.duration",
+        "durationType": "msg",
+        "layoutType": "genericPin",
+        "title": "topic",
+        "titleType": "msg",
+        "subtitle": "payload.subtitle",
+        "subtitleType": "msg",
+        "body": "payload.body",
+        "bodyType": "msg",
+        "tinyIcon": "payload.tinyIcon",
+        "tinyIconType": "msg",
+        "smallIcon": "payload.smallIcon",
+        "smallIconType": "msg",
+        "largeIcon": "payload.largeIcon",
+        "largeIconType": "msg",
+        "primaryColor": "payload.primaryColor",
+        "primaryColorType": "msg",
+        "secondaryColor": "payload.secondaryColor",
+        "secondaryColorType": "msg",
+        "backgroundColor": "payload.backgroundColor",
+        "backgroundColorType": "msg",
+        "createNotification": false,
+        "updateNotification": false,
+        "headings": "null",
+        "headingsType": "jsonata",
+        "paragraphs": "null",
+        "paragraphsType": "jsonata",
+        "lastUpdated": "null",
+        "lastUpdatedType": "jsonata",
+        "createNotificationTitle": "payload.createNotification.title",
+        "createNotificationTitleType": "msg",
+        "createNotificationBody": "payload.createNotification.body",
+        "createNotificationBodyType": "msg",
+        "createNotificationTinyIcon": "payload.createNotification.tinyIcon",
+        "createNotificationTinyIconType": "msg",
+        "updateNotificationTime": "payload.updateNotification.time",
+        "updateNotificationTimeType": "msg",
+        "updateNotificationTitle": "payload.updateNotification.title",
+        "updateNotificationTitleType": "msg",
+        "updateNotificationBody": "payload.updateNotification.body",
+        "updateNotificationBodyType": "msg",
+        "updateNotificationTinyIcon": "payload.updateNotification.tinyIcon",
+        "updateNotificationTinyIconType": "msg",
+        "locationName": "payload.locationName",
+        "locationNameType": "msg",
+        "shortTitle": "payload.shortTitle",
+        "shortTitleType": "msg",
+        "shortSubtitle": "payload.shortSubtitle",
+        "shortSubtitleType": "msg",
+        "displayTime": "pin",
+        "rankAway": "payload.rankAway",
+        "rankAwayType": "msg",
+        "rankHome": "payload.rankHome",
+        "rankHomeType": "msg",
+        "nameAway": "payload.nameAway",
+        "nameAwayType": "msg",
+        "nameHome": "payload.nameHome",
+        "nameHomeType": "msg",
+        "recordAway": "payload.recordAway",
+        "recordAwayType": "msg",
+        "recordHome": "payload.recordHome",
+        "recordHomeType": "msg",
+        "scoreAway": "payload.scoreAway",
+        "scoreAwayType": "msg",
+        "scoreHome": "payload.scoreHome",
+        "scoreHomeType": "msg",
+        "sportsGameState": "pre-game",
+        "reminders": true,
+        "reminderData": "payload.reminders",
+        "reminderDataType": "msg",
+        "actions": false,
+        "actionData": "payload.actions",
+        "actionDataType": "msg",
+        "x": 650,
+        "y": 520,
+        "wires": [
+            [
+                "92be880daefa1081"
+            ]
+        ]
+    },
+    {
+        "id": "2b8539868cf2f696",
+        "type": "inject",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "3b13dcf6236fdfdd",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            },
+            {
+                "p": "payload"
+            },
+            {
+                "p": "payload.id",
+                "v": "",
+                "vt": "date"
+            },
+            {
+                "p": "payload.body",
+                "v": "Test message body",
+                "vt": "str"
+            },
+            {
+                "p": "payload.tinyIcon",
+                "v": "system://images/NOTIFICATION_GENERIC",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "Hey buddy!",
+        "payload": "{}",
+        "payloadType": "json",
+        "x": 210,
+        "y": 520,
+        "wires": [
+            [
+                "ec9ced2729eb34c6"
+            ]
+        ]
+    },
+    {
+        "id": "ec9ced2729eb34c6",
+        "type": "function",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "3b13dcf6236fdfdd",
+        "name": "30 mins in future",
+        "func": "\nconst futureTime = new Date();\nfutureTime.setHours(futureTime.getHours() + 1);\n\nmsg.payload.time = futureTime.toISOString();\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 520,
+        "wires": [
+            [
+                "d617b39d02831885"
+            ]
+        ]
+    },
+    {
+        "id": "92be880daefa1081",
+        "type": "debug",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "3b13dcf6236fdfdd",
+        "name": "debug 46",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 840,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "bafb2568fbdc7be6",
+        "type": "catch",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "3b13dcf6236fdfdd",
+        "name": "",
+        "scope": [
+            "d617b39d02831885"
+        ],
+        "uncaught": false,
+        "x": 690,
+        "y": 580,
+        "wires": [
+            [
+                "85277056de77ba76"
+            ]
+        ]
+    },
+    {
+        "id": "85277056de77ba76",
+        "type": "debug",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "3b13dcf6236fdfdd",
+        "name": "debug 47",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 840,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "97acecc0c9f9d33b",
+        "type": "group",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "6c81ea7891323e18",
+        "name": "List timeline pins between two dates",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "f656d8b69d177cbb",
+            "ba34b2fa82bdf9dd",
+            "c7c1e742cd9d150b"
+        ],
+        "x": 94,
+        "y": 639,
+        "w": 612,
+        "h": 82
+    },
+    {
+        "id": "f656d8b69d177cbb",
+        "type": "pebble-timeline-list",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "97acecc0c9f9d33b",
+        "name": "",
+        "config": "e901bee3d7c92208",
+        "apiUrl": "null",
+        "apiUrlType": "jsonata",
+        "token": "null",
+        "tokenType": "jsonata",
+        "startTime": "payload.startTime",
+        "startTimeType": "msg",
+        "endTime": "payload.endTime",
+        "endTimeType": "msg",
+        "x": 390,
+        "y": 680,
+        "wires": [
+            [
+                "c7c1e742cd9d150b"
+            ]
+        ]
+    },
+    {
+        "id": "ba34b2fa82bdf9dd",
+        "type": "inject",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "97acecc0c9f9d33b",
+        "name": "",
+        "props": [],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 190,
+        "y": 680,
+        "wires": [
+            [
+                "f656d8b69d177cbb"
+            ]
+        ]
+    },
+    {
+        "id": "c7c1e742cd9d150b",
+        "type": "debug",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "97acecc0c9f9d33b",
+        "name": "debug 48",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 600,
+        "y": 680,
+        "wires": []
+    },
+    {
+        "id": "836ccfdc77876f9a",
+        "type": "group",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "6c81ea7891323e18",
+        "name": "Add a pin, wait 5 seconds, then delete it",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "c4fdcc861e9c8620",
+            "1f7c3430c046517c",
+            "0df0c1c3cf40abe9",
+            "b8fed461827ee3e9",
+            "b99819743543ad3d",
+            "987409f4b47f4184",
+            "c015868a113d2cc1"
+        ],
+        "x": 94,
+        "y": 759,
+        "w": 872,
+        "h": 142
+    },
+    {
+        "id": "c4fdcc861e9c8620",
+        "type": "pebble-timeline-add",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "",
+        "config": "e901bee3d7c92208",
+        "apiUrl": "null",
+        "apiUrlType": "jsonata",
+        "token": "null",
+        "tokenType": "jsonata",
+        "pinId": "payload.id",
+        "pinIdType": "msg",
+        "time": "payload.time",
+        "timeType": "msg",
+        "duration": "payload.duration",
+        "durationType": "msg",
+        "layoutType": "genericPin",
+        "title": "topic",
+        "titleType": "msg",
+        "subtitle": "payload.subtitle",
+        "subtitleType": "msg",
+        "body": "payload.body",
+        "bodyType": "msg",
+        "tinyIcon": "payload.tinyIcon",
+        "tinyIconType": "msg",
+        "smallIcon": "payload.smallIcon",
+        "smallIconType": "msg",
+        "largeIcon": "payload.largeIcon",
+        "largeIconType": "msg",
+        "primaryColor": "payload.primaryColor",
+        "primaryColorType": "msg",
+        "secondaryColor": "payload.secondaryColor",
+        "secondaryColorType": "msg",
+        "backgroundColor": "payload.backgroundColor",
+        "backgroundColorType": "msg",
+        "createNotification": false,
+        "updateNotification": false,
+        "headings": "null",
+        "headingsType": "jsonata",
+        "paragraphs": "null",
+        "paragraphsType": "jsonata",
+        "lastUpdated": "null",
+        "lastUpdatedType": "jsonata",
+        "createNotificationTitle": "payload.createNotification.title",
+        "createNotificationTitleType": "msg",
+        "createNotificationBody": "payload.createNotification.body",
+        "createNotificationBodyType": "msg",
+        "createNotificationTinyIcon": "payload.createNotification.tinyIcon",
+        "createNotificationTinyIconType": "msg",
+        "updateNotificationTime": "payload.updateNotification.time",
+        "updateNotificationTimeType": "msg",
+        "updateNotificationTitle": "payload.updateNotification.title",
+        "updateNotificationTitleType": "msg",
+        "updateNotificationBody": "payload.updateNotification.body",
+        "updateNotificationBodyType": "msg",
+        "updateNotificationTinyIcon": "payload.updateNotification.tinyIcon",
+        "updateNotificationTinyIconType": "msg",
+        "locationName": "payload.locationName",
+        "locationNameType": "msg",
+        "shortTitle": "payload.shortTitle",
+        "shortTitleType": "msg",
+        "shortSubtitle": "payload.shortSubtitle",
+        "shortSubtitleType": "msg",
+        "displayTime": "pin",
+        "rankAway": "payload.rankAway",
+        "rankAwayType": "msg",
+        "rankHome": "payload.rankHome",
+        "rankHomeType": "msg",
+        "nameAway": "payload.nameAway",
+        "nameAwayType": "msg",
+        "nameHome": "payload.nameHome",
+        "nameHomeType": "msg",
+        "recordAway": "payload.recordAway",
+        "recordAwayType": "msg",
+        "recordHome": "payload.recordHome",
+        "recordHomeType": "msg",
+        "scoreAway": "payload.scoreAway",
+        "scoreAwayType": "msg",
+        "scoreHome": "payload.scoreHome",
+        "scoreHomeType": "msg",
+        "sportsGameState": "pre-game",
+        "reminders": false,
+        "reminderData": "payload.reminders",
+        "reminderDataType": "msg",
+        "actions": false,
+        "actionData": "payload.actions",
+        "actionDataType": "msg",
+        "x": 610,
+        "y": 800,
+        "wires": [
+            [
+                "b99819743543ad3d",
+                "c015868a113d2cc1"
+            ]
+        ]
+    },
+    {
+        "id": "1f7c3430c046517c",
+        "type": "inject",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            },
+            {
+                "p": "payload"
+            },
+            {
+                "p": "payload.id",
+                "v": "",
+                "vt": "date"
+            },
+            {
+                "p": "payload.body",
+                "v": "This is just a pin deletion test. You can safely ignore me.",
+                "vt": "str"
+            },
+            {
+                "p": "payload.tinyIcon",
+                "v": "system://images/NOTIFICATION_GENERIC",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "Delete me!",
+        "payload": "{}",
+        "payloadType": "json",
+        "x": 210,
+        "y": 800,
+        "wires": [
+            [
+                "0df0c1c3cf40abe9"
+            ]
+        ]
+    },
+    {
+        "id": "0df0c1c3cf40abe9",
+        "type": "function",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "30 mins in future",
+        "func": "\nconst futureTime = new Date();\nfutureTime.setHours(futureTime.getHours() + 1);\n\nmsg.payload.time = futureTime.toISOString();\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 800,
+        "wires": [
+            [
+                "c4fdcc861e9c8620"
+            ]
+        ]
+    },
+    {
+        "id": "b8fed461827ee3e9",
+        "type": "pebble-timeline-delete",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "",
+        "config": "e901bee3d7c92208",
+        "apiUrl": "null",
+        "apiUrlType": "jsonata",
+        "token": "null",
+        "tokenType": "jsonata",
+        "pinId": "payload.pin.id",
+        "pinIdType": "msg",
+        "x": 610,
+        "y": 860,
+        "wires": [
+            [
+                "987409f4b47f4184"
+            ]
+        ]
+    },
+    {
+        "id": "b99819743543ad3d",
+        "type": "delay",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "",
+        "pauseType": "delay",
+        "timeout": "5",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 420,
+        "y": 860,
+        "wires": [
+            [
+                "b8fed461827ee3e9"
+            ]
+        ]
+    },
+    {
+        "id": "987409f4b47f4184",
+        "type": "debug",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "Debug pin deletion",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 830,
+        "y": 860,
+        "wires": []
+    },
+    {
+        "id": "c015868a113d2cc1",
+        "type": "debug",
+        "z": "forecal-timeline-endpoint-flow",
+        "g": "836ccfdc77876f9a",
+        "name": "Debug pin added",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 830,
+        "y": 800,
+        "wires": []
+    },
+    {
+        "id": "fd0bfe9c0ef2f69d",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "@skylord123/node-red-pebble-timeline": "1.2.0"
+        }
+    }
+]

@@ -43,7 +43,10 @@ var config = {
   WeatherProvider: 0,
   WeatherUpdateInterval: 60,
   RemoteEndpointUrl: '',
-  RemoteEndpointToken: ''
+  RemoteEndpointToken: '',
+  TimelineEndpointUrl: '',
+  TimelineSyncInterval: 15,
+  TimelineEndpointToken: ''
 };
 
 // only call console.log if debug is enabled
@@ -103,6 +106,542 @@ function sendBatteryToEndpoint(batteryPercent, isCharging) {
 
   req.send(payload);
 }
+
+// ============================================
+// Timeline Sync Functions
+// ============================================
+
+var timelineSyncTimer = null;
+var lastTimelineSync = null;
+var isProcessingQueue = false;
+
+// Check if timeline endpoint is configured
+function isTimelineEndpointConfigured() {
+  return config.TimelineEndpointUrl && config.TimelineEndpointUrl.trim() !== '';
+}
+
+// Check if enough time has passed since last sync
+function shouldSyncTimeline() {
+  // Always load from localStorage since JS runtime restarts between app launches
+  var stored = localStorage.getItem('lastTimelineSync');
+  log_message('Checking sync interval - stored lastTimelineSync: ' + stored);
+
+  if (stored) {
+    lastTimelineSync = parseInt(stored);
+  }
+
+  if (!lastTimelineSync) {
+    log_message('Never synced before, will sync now');
+    return true;
+  }
+
+  var intervalMs = (parseInt(config.TimelineSyncInterval) || 15) * 60 * 1000;
+  var elapsed = Date.now() - lastTimelineSync;
+
+  log_message('Time since last sync: ' + Math.round(elapsed / 1000) + 's, interval: ' + (intervalMs / 1000) + 's');
+
+  if (elapsed < intervalMs) {
+    log_message('Timeline sync skipped - not enough time elapsed');
+    return false;
+  }
+
+  log_message('Interval elapsed, will sync now');
+  return true;
+}
+
+// Recursively sort object keys for consistent JSON stringification
+function sortedStringify(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(function(item) {
+      return sortedStringify(item);
+    }).join(',') + ']';
+  }
+
+  var keys = Object.keys(obj).sort();
+  var parts = [];
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    parts.push(JSON.stringify(key) + ':' + sortedStringify(obj[key]));
+  }
+  return '{' + parts.join(',') + '}';
+}
+
+// Generate a content hash for a pin to detect changes
+// Uses sorted stringify to ensure consistent ordering regardless of field order
+function pinHash(pin) {
+  return sortedStringify({
+    time: pin.time,
+    layout: pin.layout,
+    actions: pin.actions || null
+  });
+}
+
+// Load pin index from localStorage
+function loadPinIndex() {
+  var index = {};
+  if (localStorage.getItem('timelinePinIndex')) {
+    try {
+      index = JSON.parse(localStorage.getItem('timelinePinIndex'));
+    } catch(ex) {
+      log_message('Error loading pin index: ' + ex);
+      index = {};
+    }
+  }
+  return index;
+}
+
+// Save pin index to localStorage
+function savePinIndex(index) {
+  localStorage.setItem('timelinePinIndex', JSON.stringify(index));
+}
+
+// ============================================
+// Processing Queue Functions
+// ============================================
+
+// Load processing queue from localStorage
+function loadProcessingQueue() {
+  var queue = [];
+  if (localStorage.getItem('timelineProcessingQueue')) {
+    try {
+      queue = JSON.parse(localStorage.getItem('timelineProcessingQueue'));
+      log_message('Loaded processing queue with ' + queue.length + ' pending items');
+    } catch(ex) {
+      log_message('Error loading processing queue: ' + ex);
+      queue = [];
+    }
+  }
+  return queue;
+}
+
+// Save processing queue to localStorage
+function saveProcessingQueue(queue) {
+  localStorage.setItem('timelineProcessingQueue', JSON.stringify(queue));
+}
+
+// Clear processing queue
+function clearProcessingQueue() {
+  localStorage.removeItem('timelineProcessingQueue');
+  log_message('Processing queue cleared');
+}
+
+// Check if there are pending items in the queue
+function hasPendingQueueItems() {
+  var queue = loadProcessingQueue();
+  return queue.length > 0;
+}
+
+// Check if timeline API is available
+function isTimelineApiAvailable() {
+  var hasInsert = typeof Pebble !== 'undefined' && typeof Pebble.insertTimelinePin === 'function';
+  var hasDelete = typeof Pebble !== 'undefined' && typeof Pebble.deleteTimelinePin === 'function';
+  return { insert: hasInsert, delete: hasDelete };
+}
+
+// Delete a timeline pin (abstracted for Core Devices vs Classic)
+// Handles both callback-based API (3 args) and synchronous API (1 arg)
+function deleteTimelinePin(pinId, callback) {
+  log_message('Attempting to delete pin: ' + pinId);
+
+  if (typeof Pebble !== 'undefined' && typeof Pebble.deleteTimelinePin === 'function') {
+    var apiArgCount = Pebble.deleteTimelinePin.length;
+    // log_message('deleteTimelinePin API accepts ' + apiArgCount + ' argument(s)');
+
+    try {
+      if (apiArgCount >= 3) {
+        // Callback-based API (classic Pebble) - use timeout fallback
+        var callbackFired = false;
+        var safeCallback = function() {
+          if (!callbackFired) {
+            callbackFired = true;
+            callback();
+          }
+        };
+
+        // Timeout fallback - if API doesn't respond in 5 seconds, continue anyway
+        setTimeout(function() {
+          if (!callbackFired) {
+            log_message('Delete pin timeout - continuing anyway: ' + pinId);
+            safeCallback();
+          }
+        }, 5000);
+
+        Pebble.deleteTimelinePin(
+          pinId,
+          function() {
+            log_message('Deleted pin: ' + pinId);
+            safeCallback();
+          },
+          function(err) {
+            log_message('Failed to delete pin ' + pinId + ': ' + err);
+            safeCallback(); // Continue even if delete fails
+          }
+        );
+      } else {
+        // Synchronous API (Core Devices) - no callbacks, completes immediately
+        Pebble.deleteTimelinePin(pinId);
+        log_message('Deleted pin (sync API): ' + pinId);
+        callback();
+      }
+    } catch (ex) {
+      log_message('Exception calling deleteTimelinePin: ' + ex);
+      callback();
+    }
+  } else {
+    log_message('Timeline delete API not available (Pebble.deleteTimelinePin missing)');
+    callback();
+  }
+}
+
+// Insert a timeline pin (abstracted for Core Devices vs Classic)
+// Handles both callback-based API (3 args) and synchronous API (1 arg)
+function insertTimelinePin(pin, callback) {
+  log_message('Attempting to insert pin: ' + pin.id);
+  log_message('Pin data: ' + JSON.stringify(pin));
+
+  if (typeof Pebble !== 'undefined' && typeof Pebble.insertTimelinePin === 'function') {
+    var apiArgCount = Pebble.insertTimelinePin.length;
+    // log_message('insertTimelinePin API accepts ' + apiArgCount + ' argument(s)');
+
+    try {
+      if (apiArgCount >= 3) {
+        // Callback-based API (classic Pebble) - use timeout fallback
+        var callbackFired = false;
+        var safeCallback = function() {
+          if (!callbackFired) {
+            callbackFired = true;
+            callback();
+          }
+        };
+
+        // Timeout fallback - if API doesn't respond in 5 seconds, continue anyway
+        setTimeout(function() {
+          if (!callbackFired) {
+            log_message('Insert pin timeout - continuing anyway: ' + pin.id);
+            safeCallback();
+          }
+        }, 5000);
+
+        Pebble.insertTimelinePin(
+          pin,
+          function() {
+            log_message('Successfully inserted pin: ' + pin.id);
+            safeCallback();
+          },
+          function(err) {
+            log_message('Failed to insert pin ' + pin.id + ': ' + JSON.stringify(err));
+            safeCallback();
+          }
+        );
+      } else {
+        // Synchronous API (Core Devices) - no callbacks, completes immediately
+        Pebble.insertTimelinePin(pin);
+        log_message('Successfully inserted pin (sync API): ' + pin.id);
+        callback();
+      }
+    } catch (ex) {
+      log_message('Exception calling insertTimelinePin: ' + ex);
+      callback();
+    }
+  } else {
+    log_message('Timeline insert API not available (Pebble.insertTimelinePin missing)');
+    callback();
+  }
+}
+
+// Process a single queue item
+function processQueueItem(item, callback) {
+  var index = loadPinIndex();
+
+  if (item.action === 'insert') {
+    log_message('Queue: Inserting new pin: ' + item.pinId);
+    insertTimelinePin(item.pin, function() {
+      index[item.pinId] = { hash: item.hash, lastSeen: Date.now(), seen: true };
+      savePinIndex(index);
+      callback();
+    });
+  } else if (item.action === 'update') {
+    log_message('Queue: Updating pin (delete+insert): ' + item.pinId);
+    deleteTimelinePin(item.pinId, function() {
+      insertTimelinePin(item.pin, function() {
+        index[item.pinId] = { hash: item.hash, lastSeen: Date.now(), seen: true };
+        savePinIndex(index);
+        callback();
+      });
+    });
+  } else if (item.action === 'delete') {
+    log_message('Queue: Deleting stale pin: ' + item.pinId);
+    deleteTimelinePin(item.pinId, function() {
+      delete index[item.pinId];
+      savePinIndex(index);
+      callback();
+    });
+  } else {
+    log_message('Queue: Unknown action: ' + item.action);
+    callback();
+  }
+}
+
+// Process the queue one item at a time
+function processQueue() {
+  if (isProcessingQueue) {
+    log_message('Queue processing already in progress, skipping');
+    return;
+  }
+
+  var queue = loadProcessingQueue();
+
+  if (queue.length === 0) {
+    log_message('Queue is empty, nothing to process');
+    isProcessingQueue = false;
+
+    // Save last sync time now that queue is fully processed
+    lastTimelineSync = Date.now();
+    localStorage.setItem('lastTimelineSync', lastTimelineSync.toString());
+    log_message('Queue processing complete, saved lastTimelineSync: ' + lastTimelineSync);
+    return;
+  }
+
+  isProcessingQueue = true;
+  log_message('Starting queue processing, ' + queue.length + ' items remaining');
+
+  // Take the first item from the queue
+  var item = queue[0];
+  log_message('Processing queue item: ' + item.action + ' - ' + item.pinId);
+
+  processQueueItem(item, function() {
+    // Remove the processed item from the queue
+    queue.shift();
+    saveProcessingQueue(queue);
+    log_message('Queue item processed, ' + queue.length + ' items remaining');
+
+    // Continue processing
+    isProcessingQueue = false;
+    processQueue();
+  });
+}
+
+// Build the processing queue from remote pins
+function buildProcessingQueue(remotePins) {
+  var index = loadPinIndex();
+  var queue = [];
+  var seenIds = {};
+
+  log_message('Building processing queue from ' + remotePins.length + ' remote pins');
+
+  // Process remote pins - determine inserts and updates
+  for (var i = 0; i < remotePins.length; i++) {
+    var pin = remotePins[i];
+    if (!pin.id) {
+      log_message('Skipping pin without id');
+      continue;
+    }
+
+    var pinId = pin.id;
+
+    // Skip duplicate pin IDs in the same response - only process the first occurrence
+    if (seenIds[pinId]) {
+      log_message('Skipping duplicate pin ID in response: ' + pinId);
+      continue;
+    }
+
+    var hash = pinHash(pin);
+    seenIds[pinId] = true;
+
+    var existing = index[pinId];
+    if (existing) {
+      if (existing.hash !== hash) {
+        // Pin changed - need to update
+        queue.push({ action: 'update', pinId: pinId, pin: pin, hash: hash });
+        log_message('Queued for update: ' + pinId);
+        log_message('  Old hash: ' + existing.hash.substring(0, 80) + '...');
+        log_message('  New hash: ' + hash.substring(0, 80) + '...');
+      } else {
+        // Pin unchanged - just update lastSeen in index
+        index[pinId].lastSeen = Date.now();
+        log_message('Pin unchanged, skipping: ' + pinId);
+      }
+    } else {
+      // New pin - need to insert
+      queue.push({ action: 'insert', pinId: pinId, pin: pin, hash: hash });
+      log_message('Queued for insert: ' + pinId);
+    }
+  }
+
+  // Find stale pins to delete
+  for (var existingId in index) {
+    if (index.hasOwnProperty(existingId) && !seenIds[existingId]) {
+      queue.push({ action: 'delete', pinId: existingId });
+      log_message('Queued for delete: ' + existingId);
+    }
+  }
+
+  // Save the updated index (for unchanged pins)
+  savePinIndex(index);
+
+  log_message('Processing queue built: ' + queue.length + ' items (inserts/updates/deletes)');
+  return queue;
+}
+
+// Main sync function - fetch pins from endpoint and build processing queue
+function syncTimelinePins(force) {
+  if (!isTimelineEndpointConfigured()) {
+    log_message('Timeline endpoint not configured, skipping sync');
+    return;
+  }
+
+  // Check if there's a pending queue - if so, resume processing instead of fetching
+  if (hasPendingQueueItems()) {
+    log_message('Pending queue items found, resuming processing instead of fetching');
+    processQueue();
+    return;
+  }
+
+  // Check if we should sync based on interval (unless forced)
+  if (!force && !shouldSyncTimeline()) {
+    return;
+  }
+
+  log_message('Starting timeline sync from: ' + config.TimelineEndpointUrl);
+
+  var req = new XMLHttpRequest();
+  req.open('GET', config.TimelineEndpointUrl, true);
+  req.setRequestHeader('Accept', 'application/json');
+
+  // Add Bearer token authorization if provided
+  if (config.TimelineEndpointToken && config.TimelineEndpointToken.trim() !== '') {
+    req.setRequestHeader('Authorization', 'Bearer ' + config.TimelineEndpointToken.trim());
+  }
+
+  req.onload = function() {
+    if (req.readyState === 4) {
+      if (req.status >= 200 && req.status < 300) {
+        log_message('Timeline data received, status: ' + req.status);
+        try {
+          var response = JSON.parse(req.responseText);
+          var pins = response.pins || [];
+
+          log_message('Received ' + pins.length + ' pins from remote');
+
+          // Debug: log first pin structure
+          if (pins.length > 0) {
+            log_message('First pin: ' + JSON.stringify(pins[0]));
+          }
+
+          // Build the processing queue
+          var queue = buildProcessingQueue(pins);
+
+          if (queue.length > 0) {
+            // Save the queue to localStorage
+            saveProcessingQueue(queue);
+            log_message('Saved processing queue with ' + queue.length + ' items');
+
+            // Start processing
+            processQueue();
+          } else {
+            log_message('No changes detected, nothing to process');
+            // Save last sync time
+            lastTimelineSync = Date.now();
+            localStorage.setItem('lastTimelineSync', lastTimelineSync.toString());
+            log_message('Sync complete (no changes), saved lastTimelineSync: ' + lastTimelineSync);
+          }
+
+        } catch(ex) {
+          log_message('Error parsing timeline response: ' + ex);
+        }
+      } else {
+        log_message('Failed to fetch timeline data. Status: ' + req.status);
+      }
+    }
+  };
+
+  req.onerror = function() {
+    log_message('Network error fetching timeline data');
+  };
+
+  req.send(null);
+}
+
+// Start the timeline sync timer
+// force: if true, syncs immediately regardless of interval (used when settings are saved)
+function startTimelineSync(force) {
+  // Clear any existing timer
+  stopTimelineSync();
+
+  if (!isTimelineEndpointConfigured()) {
+    log_message('Timeline endpoint not configured, not starting sync timer');
+    return;
+  }
+
+  // Check and log API availability
+  var apiStatus = isTimelineApiAvailable();
+  log_message('Timeline API status - insert: ' + apiStatus.insert + ', delete: ' + apiStatus.delete);
+
+  // Check if there are pending queue items from a previous run
+  if (hasPendingQueueItems()) {
+    log_message('Found pending queue items, resuming processing');
+    processQueue();
+  } else {
+    // Do an initial sync if needed
+    // If force=true (settings saved), always sync immediately
+    // Otherwise, respect the interval
+    syncTimelinePins(force);
+  }
+
+  var intervalMs = (parseInt(config.TimelineSyncInterval) || 15) * 60 * 1000;
+
+  // Calculate time until next sync based on lastTimelineSync + interval
+  // Load lastTimelineSync from localStorage if not already loaded
+  if (!lastTimelineSync) {
+    var stored = localStorage.getItem('lastTimelineSync');
+    if (stored) {
+      lastTimelineSync = parseInt(stored);
+    }
+  }
+
+  var nextSyncMs;
+  if (lastTimelineSync) {
+    var nextSyncTime = lastTimelineSync + intervalMs;
+    nextSyncMs = nextSyncTime - Date.now();
+    // If next sync time is in the past, use the full interval
+    if (nextSyncMs <= 0) {
+      nextSyncMs = intervalMs;
+    }
+  } else {
+    // No previous sync, use full interval
+    nextSyncMs = intervalMs;
+  }
+
+  log_message('Next timeline sync in ' + Math.round(nextSyncMs / 1000) + ' seconds (' + Math.round(nextSyncMs / 60000) + ' minutes)');
+
+  // Use setTimeout for the first interval (calculated), then setInterval for subsequent ones
+  timelineSyncTimer = setTimeout(function() {
+    syncTimelinePins();
+    // After first sync, use regular interval
+    timelineSyncTimer = setInterval(function() {
+      syncTimelinePins();
+    }, intervalMs);
+  }, nextSyncMs);
+}
+
+// Stop the timeline sync timer
+function stopTimelineSync() {
+  if (timelineSyncTimer) {
+    // Clear both setTimeout and setInterval (same ID works for both)
+    clearTimeout(timelineSyncTimer);
+    clearInterval(timelineSyncTimer);
+    timelineSyncTimer = null;
+    log_message('Timeline sync timer stopped');
+  }
+}
+
+// ============================================
+// End Timeline Sync Functions
+// ============================================
 
 function loadSettings() {
 
@@ -165,6 +704,7 @@ function saveSettings() {
   config.QTEndMin = parseInt(config.QTEnd.split(":")[1]);
   config.WeatherProvider = parseInt(config.WeatherProvider);
   config.WeatherUpdateInterval = parseInt(config.WeatherUpdateInterval) || 60;
+  config.TimelineSyncInterval = parseInt(config.TimelineSyncInterval) || 15;
 
   // Get previously saved config for comparison
   try {
@@ -2178,6 +2718,7 @@ Pebble.addEventListener("ready",
                           if (DEBUG) console.log("JS Ready");
                           //localStorage.clear();
                           loadSettings();
+                          startTimelineSync();
                         });
 
 Pebble.addEventListener("appmessage",
@@ -2225,6 +2766,7 @@ Pebble.addEventListener("webviewclosed",
                              }
                              if (DEBUG) console.log("Settings returned: " + JSON.stringify(config));
                              saveSettings();
+                             startTimelineSync(true); // Force sync immediately when settings are saved
                            }
                            else {
                              if (DEBUG) console.log("Settings cancelled");

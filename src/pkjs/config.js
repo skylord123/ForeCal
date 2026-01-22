@@ -311,6 +311,49 @@ module.exports = [
   },
 
   {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Remote Timeline Sync"
+      },
+      {
+        "type": "input",
+        "appKey": "TimelineEndpointUrl",
+        "defaultValue": "",
+        "label": "Endpoint URL",
+        "description": "URL to fetch timeline pins from (GET request). Leave blank to disable.",
+        "attributes": {
+          "placeholder": "https://example.com/api/timeline",
+          "limit": 256
+        }
+      },
+      {
+        "type": "input",
+        "appKey": "TimelineSyncInterval",
+        "defaultValue": "15",
+        "label": "Sync Interval (minutes)",
+        "description": "How often to check for timeline updates (default: 15)",
+        "attributes": {
+          "type": "number",
+          "min": "1"
+        }
+      },
+      {
+        "type": "input",
+        "appKey": "TimelineEndpointToken",
+        "defaultValue": "",
+        "label": "Authorization Token",
+        "description": "Bearer token for authorization (optional)",
+        "attributes": {
+          "placeholder": "your-api-token",
+          "limit": 256
+        }
+      }
+    ]
+  },
+
+  {
     "type": "submit",
     "defaultValue": "Save"
   },
