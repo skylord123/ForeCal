@@ -1,4 +1,4 @@
-ForeCal
+ForeCal Reloaded
 =======
 
 Pebble watchface with weather, forecast, and a compact 3-week calendar.
