@@ -1,0 +1,383 @@
+[
+  {
+    "id": "e8c45ef2c8b2daca",
+    "type": "group",
+    "z": "pebble-boot-flow",
+    "name": "Sync a Home Assistant calendar to timeline",
+    "style": {
+      "label": true
+    },
+    "nodes": [
+      "0aec90c8e0ef1949",
+      "f25fde4ef9a38ac5",
+      "68951cb86d7f945e",
+      "b5131dfcce467277",
+      "1eafc494d694777a",
+      "e2b75d59198d068a",
+      "37f20a53d8001c38",
+      "86c6d58f1c397d21",
+      "f0ed95edae1df16d",
+      "b79741604d0c38a2"
+    ],
+    "x": 94,
+    "y": 3059,
+    "w": 1352,
+    "h": 242
+  },
+  {
+    "id": "0aec90c8e0ef1949",
+    "type": "inject",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "0 0-23 * * *",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 210,
+    "y": 3120,
+    "wires": [
+      [
+        "68951cb86d7f945e"
+      ]
+    ]
+  },
+  {
+    "id": "f25fde4ef9a38ac5",
+    "type": "api-call-service",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "",
+    "server": "233a9c63.e2baf4",
+    "version": 7,
+    "debugenabled": false,
+    "action": "calendar.get_events",
+    "floorId": [],
+    "areaId": [],
+    "deviceId": [],
+    "entityId": [
+      "calendar.skylars_calendar"
+    ],
+    "labelId": [],
+    "data": "{\t    \"start_date_time\": filter.start_date_time,\t    \"end_date_time\": filter.end_date_time\t}",
+    "dataType": "jsonata",
+    "mergeContext": "",
+    "mustacheAltTags": false,
+    "outputProperties": [
+      {
+        "property": "calendar_events",
+        "propertyType": "msg",
+        "value": "",
+        "valueType": "results"
+      }
+    ],
+    "queue": "none",
+    "blockInputOverrides": true,
+    "domain": "calendar",
+    "service": "get_events",
+    "x": 620,
+    "y": 3120,
+    "wires": [
+      [
+        "1eafc494d694777a"
+      ]
+    ]
+  },
+  {
+    "id": "68951cb86d7f945e",
+    "type": "function",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "Dates for current week",
+    "func": "// Define time window\nconst now = Date.now();\nconst pastCutoff = now - (24 * 60 * 60 * 1000);    // 24 hours ago\nconst futureCutoff = now + (7 * 24 * 60 * 60 * 1000); // 7 days from now\n\n// Format the dates as \"YYYY-MM-DD HH:MM:SS\"\nconst formatDate = (d) => {\n    const date = new Date(d);\n    const year = date.getFullYear();\n    const month = String(date.getMonth() + 1).padStart(2, '0');\n    const day = String(date.getDate()).padStart(2, '0');\n    const hours = String(date.getHours()).padStart(2, '0');\n    const minutes = String(date.getMinutes()).padStart(2, '0');\n    const seconds = String(date.getSeconds()).padStart(2, '0');\n\n    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;\n};\n\nmsg.filter = {\n    start_date_time: formatDate(pastCutoff),\n    end_date_time: formatDate(futureCutoff)\n}\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 3120,
+    "wires": [
+      [
+        "f25fde4ef9a38ac5"
+      ]
+    ]
+  },
+  {
+    "id": "b5131dfcce467277",
+    "type": "function",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "Update Timeline",
+    "func": "// ===== CONFIGURATION =====\n// Pin template - defines how calendar events are displayed\nconst PIN_TEMPLATE = {\n    // Layout configuration\n    layout: {\n        type: \"calendarPin\",\n        tinyIcon: \"system://images/TIMELINE_CALENDAR\",\n        primaryColor: null,\n        secondaryColor: null,\n        backgroundColor: null,\n    },\n\n    // Duration in minutes (optional - will calculate from event)\n    duration: null,\n\n    // Transform function to customize event data\n    transformEvent: (event) => {\n        return {\n            title: event.summary,\n            subtitle: event.location || undefined,\n            body: event.description || undefined,\n            locationName: event.location || undefined,\n            tinyIcon: \"system://images/TIMELINE_CALENDAR\"\n        };\n    }\n};\n\n// Reminder templates - set to empty array to disable reminders\nconst REMINDER_TEMPLATES = [\n    {\n        time: 60,  // 1 hour before event\n        layout: {\n            type: \"genericReminder\",\n            tinyIcon: \"system://images/TIMELINE_CALENDAR\",\n            title: \"{event_title} in 1 hour\",\n            body: \"Upcoming event\"\n        },\n        timedOnly: true  // Only for events with specific times\n    },\n    {\n        time: 1440,  // 24 hours before (1 day)\n        layout: {\n            type: \"genericReminder\",\n            tinyIcon: \"system://images/NOTIFICATION_REMINDER\",\n            title: \"{event_title} Tomorrow\",\n            body: \"Event tomorrow\"\n        }\n    },\n    {\n        time: 480,  // 8 hours before all-day events (4pm day before for midnight events)\n        layout: {\n            type: \"genericReminder\",\n            tinyIcon: \"system://images/TIMELINE_CALENDAR\",\n            title: \"{event_title} Tomorrow\",\n            body: \"All-day event tomorrow\"\n        },\n        allDayOnly: true\n    }\n];\n\n// Notification templates (shown when pin is created/updated)\nconst NOTIFICATION_TEMPLATES = {\n    create: null,  // Disable create notifications\n    update: null   // Disable update notifications\n};\n// ===== END CONFIGURATION =====\n\n// Get current timeline pins and calendar events\nconst timelinePins = msg.payload || [];\nconst calendarEvents = msg.calendar_events || {};\n\n// Track operations across all calendars\nlet totalDeleted = 0;\nlet totalUpdated = 0;\nlet totalInserted = 0;\n\nconst allPinsToAddUpdate = [];\nconst allPinsToDelete = [];\n\n// Helper function to parse event time and determine if all-day\nconst parseEventTime = (event) => {\n    const start = event.start;\n    const end = event.end;\n\n    // Check if it's an all-day event (no time component, just date)\n    const isAllDay = !start.includes('T');\n\n    let eventTime;\n    let endTime = null;\n\n    if (isAllDay) {\n        // All-day event: set to midnight (00:00:00) of the start date\n        eventTime = new Date(start + 'T00:00:00').getTime();\n        if (end) {\n            endTime = new Date(end + 'T00:00:00').getTime();\n        }\n    } else {\n        // Timed event: parse the full datetime\n        eventTime = new Date(start).getTime();\n        if (end) {\n            endTime = new Date(end).getTime();\n        }\n    }\n\n    return { eventTime, endTime, isAllDay };\n};\n\n// Helper function to replace placeholders in string\nconst replacePlaceholders = (str, event, eventTime) => {\n    if (!str) return str;\n    return str\n        .replace(/{event_title}/g, event.summary || '')\n        .replace(/{event_location}/g, event.location || '')\n        .replace(/{event_description}/g, event.description || '');\n};\n\n// Helper function to create reminder object\nconst createReminder = (event, reminderTemplate, eventTime, isAllDay) => {\n    // Skip if template is for all-day only but event is timed\n    if (reminderTemplate.allDayOnly && !isAllDay) return null;\n    // Skip if template is for timed only but event is all-day\n    if (reminderTemplate.timedOnly && isAllDay) return null;\n\n    const reminderTime = new Date(eventTime - (reminderTemplate.time * 60 * 1000));\n\n    // Only add reminder if it's in the future\n    if (reminderTime.getTime() <= Date.now()) return null;\n\n    const reminder = {\n        time: reminderTime.toISOString(),\n        layout: {\n            type: reminderTemplate.layout.type || \"genericReminder\",\n            title: replacePlaceholders(reminderTemplate.layout.title, event, eventTime)\n        }\n    };\n\n    if (reminderTemplate.layout.body) {\n        reminder.layout.body = replacePlaceholders(reminderTemplate.layout.body, event, eventTime);\n    }\n    if (reminderTemplate.layout.tinyIcon) {\n        reminder.layout.tinyIcon = reminderTemplate.layout.tinyIcon;\n    }\n    if (reminderTemplate.layout.locationName) {\n        reminder.layout.locationName = replacePlaceholders(reminderTemplate.layout.locationName, event, eventTime);\n    }\n\n    return reminder;\n};\n\n// Helper function to check if pin needs updating\nconst needsUpdate = (existingPin, newPin) => {\n    if (!existingPin) return false;\n\n    // Compare key fields\n    if (existingPin.time !== newPin.time) return true;\n    if (existingPin.layout.title !== newPin.title) return true;\n    if (existingPin.layout.subtitle !== newPin.subtitle) return true;\n    if (existingPin.layout.body !== newPin.body) return true;\n    if (existingPin.layout.tinyIcon !== newPin.tinyIcon) return true;\n    if (existingPin.layout.locationName !== newPin.locationName) return true;\n    if (existingPin.duration !== newPin.duration) return true;\n\n    // Compare reminders\n    const oldReminders = JSON.stringify(existingPin.reminders || []);\n    const newReminders = JSON.stringify(newPin.reminders || []);\n    if (oldReminders !== newReminders) return true;\n\n    return false;\n};\n\n// Process each calendar in the response\nfor (const [entityId, calendarData] of Object.entries(calendarEvents)) {\n    // Extract calendar ID from entity ID (e.g., \"calendar.personal\" -> \"personal\")\n    const calendarId = entityId.replace('calendar.', '');\n\n    // Extract events array\n    let events = [];\n    if (calendarData && calendarData.events && Array.isArray(calendarData.events)) {\n        events = calendarData.events;\n    } else if (Array.isArray(calendarData)) {\n        events = calendarData;\n    } else {\n        node.warn(`No events array found for ${entityId}`);\n        continue;\n    }\n\n    // Track pins for this calendar\n    const calendarPinIds = new Set();\n    const calendarPinsMap = {};\n\n    // Process each event\n    events.forEach(event => {\n        if (!event.start) {\n            node.warn(\"Skipping event without start time: \" + JSON.stringify(event));\n            return;\n        }\n\n        // Parse event time and determine if all-day\n        const { eventTime, endTime, isAllDay } = parseEventTime(event);\n\n        // Create unique ID using calendar ID + event start time\n        const pinId = `${calendarId}_${eventTime}`;\n        calendarPinIds.add(pinId);\n\n        // Add isAllDay to event object for transform function\n        event.isAllDay = isAllDay;\n\n        // Transform event data using template function\n        const transformed = PIN_TEMPLATE.transformEvent(event);\n\n        // Create main timeline pin object for pebble-timeline-add node\n        const pin = {\n            id: pinId,\n            time: new Date(eventTime).toISOString(),\n            layoutType: PIN_TEMPLATE.layout.type,\n            title: transformed.title\n        };\n\n        // Add standard optional fields from transformed data\n        if (transformed.subtitle) pin.subtitle = transformed.subtitle;\n        if (transformed.body) pin.body = transformed.body;\n        if (transformed.locationName) pin.locationName = transformed.locationName;\n        if (transformed.tinyIcon) {\n            pin.tinyIcon = transformed.tinyIcon;\n        } else if (PIN_TEMPLATE.layout.tinyIcon) {\n            pin.tinyIcon = PIN_TEMPLATE.layout.tinyIcon;\n        }\n\n        // Add layout settings from template\n        if (PIN_TEMPLATE.layout.smallIcon) pin.smallIcon = PIN_TEMPLATE.layout.smallIcon;\n        if (PIN_TEMPLATE.layout.largeIcon) pin.largeIcon = PIN_TEMPLATE.layout.largeIcon;\n        if (PIN_TEMPLATE.layout.primaryColor) pin.primaryColor = PIN_TEMPLATE.layout.primaryColor;\n        if (PIN_TEMPLATE.layout.secondaryColor) pin.secondaryColor = PIN_TEMPLATE.layout.secondaryColor;\n        if (PIN_TEMPLATE.layout.backgroundColor) pin.backgroundColor = PIN_TEMPLATE.layout.backgroundColor;\n\n        // Add duration if specified\n        if (PIN_TEMPLATE.duration) {\n            pin.duration = PIN_TEMPLATE.duration;\n        } else if (endTime && !isAllDay) {\n            // Calculate duration from event (only for timed events)\n            pin.duration = Math.round((endTime - eventTime) / (60 * 1000)); // Convert to minutes\n        }\n\n        // Create reminders array if configured\n        if (REMINDER_TEMPLATES && Array.isArray(REMINDER_TEMPLATES) && REMINDER_TEMPLATES.length > 0) {\n            const reminders = [];\n            REMINDER_TEMPLATES.forEach(reminderTemplate => {\n                const reminder = createReminder(event, reminderTemplate, eventTime, isAllDay);\n                if (reminder) {\n                    reminders.push(reminder);\n                }\n            });\n\n            if (reminders.length > 0) {\n                pin.reminders = reminders;\n            }\n        }\n\n        calendarPinsMap[pinId] = pin;\n    });\n\n    // Find pins to delete (existing pins for this calendar that are no longer in calendar)\n    timelinePins.forEach(pin => {\n        // Check if this pin belongs to our calendar (starts with calendarId_)\n        if (pin.id.startsWith(`${calendarId}_`)) {\n            // If it's not in the current calendar events, delete it\n            if (!calendarPinIds.has(pin.id)) {\n                allPinsToDelete.push({ id: pin.id });\n                totalDeleted++;\n            }\n        }\n    });\n\n    // Find pins to add/update\n    Object.values(calendarPinsMap).forEach(newPin => {\n        const existingPin = timelinePins.find(p => p.id === newPin.id);\n\n        if (existingPin) {\n            // Check if it needs updating\n            if (needsUpdate(existingPin, newPin)) {\n                allPinsToAddUpdate.push(newPin);\n                totalUpdated++;\n            }\n        } else {\n            // New pin\n            allPinsToAddUpdate.push(newPin);\n            totalInserted++;\n        }\n    });\n}\n\n// Log sync summary\nnode.log(`Personal calendar sync: ${totalInserted} inserted, ${totalUpdated} updated, ${totalDeleted} deleted`);\n\n// Prepare messages for outputs\nconst syncStatus = {\n    payload: {\n        inserted: totalInserted,\n        updated: totalUpdated,\n        deleted: totalDeleted,\n        total: allPinsToAddUpdate.length\n    }\n};\n\n// Send pins to appropriate outputs\nconst addUpdateMessages = allPinsToAddUpdate.map(pin => ({ payload: pin }));\nconst deleteMessages = allPinsToDelete.map(pin => ({ payload: pin }));\n\nnode.status({\"fill\": \"green\", \"shape\": \"ring\", \"text\": new Date().toLocaleString()});\n\n// Return arrays for each output\n// Output 1: Sync status (single message)\n// Output 2: Pins to add/update (array of messages)\n// Output 3: Pins to delete (array of messages)\nreturn [\n    syncStatus,\n    addUpdateMessages.length > 0 ? addUpdateMessages : null,\n    deleteMessages.length > 0 ? deleteMessages : null\n];",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1040,
+    "y": 3120,
+    "wires": [
+      [
+        "86c6d58f1c397d21"
+      ],
+      [
+        "f0ed95edae1df16d",
+        "e2b75d59198d068a"
+      ],
+      [
+        "b79741604d0c38a2",
+        "37f20a53d8001c38"
+      ]
+    ]
+  },
+  {
+    "id": "1eafc494d694777a",
+    "type": "pebble-timeline-list",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "",
+    "config": "e901bee3d7c92208",
+    "apiUrl": "null",
+    "apiUrlType": "jsonata",
+    "token": "null",
+    "tokenType": "jsonata",
+    "startTime": "payload.startTime",
+    "startTimeType": "msg",
+    "endTime": "payload.endTime",
+    "endTimeType": "msg",
+    "x": 850,
+    "y": 3120,
+    "wires": [
+      [
+        "b5131dfcce467277"
+      ]
+    ]
+  },
+  {
+    "id": "e2b75d59198d068a",
+    "type": "pebble-timeline-add",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "",
+    "config": "e901bee3d7c92208",
+    "apiUrl": "null",
+    "apiUrlType": "jsonata",
+    "token": "null",
+    "tokenType": "jsonata",
+    "pinId": "payload.id",
+    "pinIdType": "msg",
+    "time": "payload.time",
+    "timeType": "msg",
+    "duration": "payload.duration",
+    "durationType": "msg",
+    "layoutType": "genericPin",
+    "title": "payload.title",
+    "titleType": "msg",
+    "subtitle": "payload.subtitle",
+    "subtitleType": "msg",
+    "body": "payload.body",
+    "bodyType": "msg",
+    "tinyIcon": "payload.tinyIcon",
+    "tinyIconType": "msg",
+    "smallIcon": "payload.smallIcon",
+    "smallIconType": "msg",
+    "largeIcon": "payload.largeIcon",
+    "largeIconType": "msg",
+    "primaryColor": "payload.primaryColor",
+    "primaryColorType": "msg",
+    "secondaryColor": "payload.secondaryColor",
+    "secondaryColorType": "msg",
+    "backgroundColor": "payload.backgroundColor",
+    "backgroundColorType": "msg",
+    "createNotification": false,
+    "updateNotification": false,
+    "headings": "null",
+    "headingsType": "jsonata",
+    "paragraphs": "null",
+    "paragraphsType": "jsonata",
+    "lastUpdated": "null",
+    "lastUpdatedType": "jsonata",
+    "createNotificationTitle": "payload.createNotification.title",
+    "createNotificationTitleType": "msg",
+    "createNotificationBody": "payload.createNotification.body",
+    "createNotificationBodyType": "msg",
+    "createNotificationTinyIcon": "payload.createNotification.tinyIcon",
+    "createNotificationTinyIconType": "msg",
+    "updateNotificationTime": "payload.updateNotification.time",
+    "updateNotificationTimeType": "msg",
+    "updateNotificationTitle": "payload.updateNotification.title",
+    "updateNotificationTitleType": "msg",
+    "updateNotificationBody": "payload.updateNotification.body",
+    "updateNotificationBodyType": "msg",
+    "updateNotificationTinyIcon": "payload.updateNotification.tinyIcon",
+    "updateNotificationTinyIconType": "msg",
+    "locationName": "payload.locationName",
+    "locationNameType": "msg",
+    "shortTitle": "payload.shortTitle",
+    "shortTitleType": "msg",
+    "shortSubtitle": "payload.shortSubtitle",
+    "shortSubtitleType": "msg",
+    "displayTime": "pin",
+    "rankAway": "payload.rankAway",
+    "rankAwayType": "msg",
+    "rankHome": "payload.rankHome",
+    "rankHomeType": "msg",
+    "nameAway": "payload.nameAway",
+    "nameAwayType": "msg",
+    "nameHome": "payload.nameHome",
+    "nameHomeType": "msg",
+    "recordAway": "payload.recordAway",
+    "recordAwayType": "msg",
+    "recordHome": "payload.recordHome",
+    "recordHomeType": "msg",
+    "scoreAway": "payload.scoreAway",
+    "scoreAwayType": "msg",
+    "scoreHome": "payload.scoreHome",
+    "scoreHomeType": "msg",
+    "sportsGameState": "pre-game",
+    "reminders": true,
+    "reminderData": "payload.reminders",
+    "reminderDataType": "msg",
+    "actions": false,
+    "actionData": "payload.actions",
+    "actionDataType": "msg",
+    "x": 1270,
+    "y": 3180,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "37f20a53d8001c38",
+    "type": "pebble-timeline-delete",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "",
+    "config": "e901bee3d7c92208",
+    "apiUrl": "null",
+    "apiUrlType": "jsonata",
+    "token": "null",
+    "tokenType": "jsonata",
+    "pinId": "payload.id",
+    "pinIdType": "msg",
+    "x": 1270,
+    "y": 3260,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "86c6d58f1c397d21",
+    "type": "debug",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "HA Calendar Sync Complete",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1280,
+    "y": 3100,
+    "wires": []
+  },
+  {
+    "id": "f0ed95edae1df16d",
+    "type": "debug",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "HA Calendar Sync ADD",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1270,
+    "y": 3140,
+    "wires": []
+  },
+  {
+    "id": "b79741604d0c38a2",
+    "type": "debug",
+    "z": "pebble-boot-flow",
+    "g": "e8c45ef2c8b2daca",
+    "name": "HA Calendar Sync DELETE",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1280,
+    "y": 3220,
+    "wires": []
+  },
+  {
+    "id": "233a9c63.e2baf4",
+    "type": "server",
+    "name": "Home Assistant",
+    "version": 6,
+    "addon": false,
+    "rejectUnauthorizedCerts": true,
+    "ha_boolean": [
+      "y",
+      "yes",
+      "true",
+      "on",
+      "home",
+      "open"
+    ],
+    "connectionDelay": true,
+    "cacheJson": true,
+    "heartbeat": false,
+    "heartbeatInterval": "30",
+    "areaSelector": "friendlyName",
+    "deviceSelector": "friendlyName",
+    "entitySelector": "friendlyName",
+    "statusSeparator": "at: ",
+    "statusYear": "hidden",
+    "statusMonth": "short",
+    "statusDay": "numeric",
+    "statusHourCycle": "h23",
+    "statusTimeFormat": "h:m",
+    "enableGlobalContextStore": true
+  },
+  {
+    "id": "e901bee3d7c92208",
+    "type": "pebble-timeline-config",
+    "name": "Emulated Timeline",
+    "apiUrl": ""
+  },
+  {
+    "id": "e4fe7740c97d4283",
+    "type": "global-config",
+    "env": [],
+    "modules": {
+      "node-red-contrib-home-assistant-websocket": "0.80.3",
+      "@skylord123/node-red-pebble-timeline": "1.2.0"
+    }
+  }
+]
