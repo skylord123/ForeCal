@@ -2,6 +2,13 @@
 
 This guide walks you through setting up Node-RED to serve timeline pins to ForeCal using the local Pebble Timeline emulation built into the `node-red-pebble-timeline` nodes. No token or Rebble Web Services are required.
 
+## Example Flows
+
+### Sync Home Assistant Calendar to Timeline
+
+See [docs/timeline-sync/flows/sync-home-assistant-calendar-to-timeline.md](flows/sync-home-assistant-calendar-to-timeline.md) for a complete walkthrough and flow export.
+
+
 ## Prerequisites
 
 - Node-RED installed and running

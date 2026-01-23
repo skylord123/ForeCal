@@ -4,6 +4,8 @@ This flow syncs a Home Assistant calendar into the local Pebble Timeline store u
 
 Flow file: `sync-home-assistant-calendar-to-timeline.json`
 
+![sync-home-assistant-calendar-to-timeline.png](sync-home-assistant-calendar-to-timeline.png)
+
 ## Prerequisites
 
 - Node-RED running (with the ForeCal timeline endpoint flow already set up)

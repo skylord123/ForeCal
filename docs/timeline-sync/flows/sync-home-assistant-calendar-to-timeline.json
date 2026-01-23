@@ -3,7 +3,7 @@
     "id": "e8c45ef2c8b2daca",
     "type": "group",
     "z": "pebble-boot-flow",
-    "name": "Sync Skylar's calendar to timeline",
+    "name": "Sync a Home Assistant calendar to timeline",
     "style": {
       "label": true
     },
