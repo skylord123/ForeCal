@@ -1,7 +1,13 @@
-ForeCal Reloaded
-=======
+# ForeCal Reloaded
 
-Pebble watchface with weather, forecast, and a compact 3-week calendar.
+A Pebble watchface featuring weather, forecasts, and a compact 3-week calendar.
+
+ForeCal Reloaded also includes optional **remote endpoint support**, allowing it to:
+- Sync timeline data with a server
+- Report watch battery level to a remote endpoint
+
+Designed for users who want rich glanceable info on their wrist, with the flexibility to integrate into self-hosted or custom backends.
+
 
 Support
 -------
