@@ -1405,14 +1405,18 @@ function geocodeLocation(location, successCallback, errorCallback) {
     return;
   }
 
+  // Include email contact in URL as recommended by Nominatim for identification
   var url = 'https://nominatim.openstreetmap.org/search?q=' +
             encodeURIComponent(location) +
-            '&format=json&limit=1&addressdetails=1';
+            '&format=json&limit=1&addressdetails=1' +
+            '&email=forecal-pebble@skylarsadlier.com';
 
   var req = new XMLHttpRequest();
 
   req.open('GET', url, true);
-  req.setRequestHeader('User-Agent', 'PebbleForeCal/1.0');
+  // Nominatim requires a custom User-Agent or Referer that identifies the application
+  // Stock User-Agents from HTTP libraries are not acceptable
+  req.setRequestHeader('Referer', 'https://github.com/skylord123/forecal');
 
   req.onload = function() {
     if (req.readyState === 4) {
@@ -2136,7 +2140,7 @@ function fetchOpenMeteoWeather(lat, lon) {
 
         status = 'Upd: ' + timeStr(curr_time);
 
-        // Get today's and tomorrow's forecast from daily data
+        // Get today's and tomorrow's openstreetmapforecast from daily data
         var todayCode = d.daily.weather_code ? d.daily.weather_code[0] : 0;
         var tomorrowCode = d.daily.weather_code ? d.daily.weather_code[1] : 0;
 
