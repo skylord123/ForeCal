@@ -648,22 +648,46 @@ function loadSettings() {
 
   if (DEBUG) console.log('Loading settings...');
 
-  if (localStorage.getItem('config')) {
+  // Try the primary key first; if it's corrupt (e.g. JS process killed
+  // mid-setItem leaving a torn write) fall back to config.bak before giving
+  // up. Never delete either copy — the raw bytes stay available for manual
+  // recovery on next launch.
+  var loaded = null;
+  var primaryRaw = localStorage.getItem('config');
+  if (primaryRaw) {
     try {
-      config = JSON.parse(localStorage.getItem('config'));
-      if (typeof config.WeatherProvider === "undefined") {
-        config.WeatherProvider = 0;
-        localStorage.removeItem("lastStationId");
-        localStorage.removeItem("lastCity");
-        localStorage.removeItem("lastUpdate");
-        localStorage.removeItem("lastForecastUpdate");
-        localStorage.removeItem("forecastToday");
-        localStorage.removeItem("forecastTomorrow");
-        lastStationId = null;
-        lastUpdate = null;
-        lastForecastUpdate = null;
+      loaded = JSON.parse(primaryRaw);
+    } catch(ex) {
+      console.error('Error parsing primary config, trying backup: ' + ex);
+      var backupRaw = localStorage.getItem('config.bak');
+      if (backupRaw) {
+        try {
+          loaded = JSON.parse(backupRaw);
+          console.log('Recovered settings from config.bak');
+        } catch(ex2) {
+          console.error('Backup config also unparseable: ' + ex2);
+        }
       }
-    } catch(ex) {}
+    }
+  }
+
+  if (loaded) {
+    config = loaded;
+    console.log('Loaded settings: ' + JSON.stringify(config, null, 2));
+    if (typeof config.WeatherProvider === "undefined") {
+      config.WeatherProvider = 0;
+      localStorage.removeItem("lastStationId");
+      localStorage.removeItem("lastCity");
+      localStorage.removeItem("lastUpdate");
+      localStorage.removeItem("lastForecastUpdate");
+      localStorage.removeItem("forecastToday");
+      localStorage.removeItem("forecastTomorrow");
+      lastStationId = null;
+      lastUpdate = null;
+      lastForecastUpdate = null;
+    }
+  } else if (!primaryRaw) {
+    console.log('No settings found, using defaults');
   }
 
   if (localStorage.getItem('time24hr') !== null)
@@ -708,10 +732,18 @@ function saveSettings() {
   config.TimelineSyncInterval = parseInt(config.TimelineSyncInterval) || 15;
 
   // Get previously saved config for comparison
+  var previousRaw = localStorage.getItem('config');
   try {
-    if (localStorage.getItem('config')) saved = JSON.parse(localStorage.getItem('config'));
+    if (previousRaw) saved = JSON.parse(previousRaw);
   } catch(ex) {}
-  localStorage.setItem('config', JSON.stringify(config));
+
+  var serialized = JSON.stringify(config);
+  // Promote the current primary to backup before overwriting it, so a torn
+  // write to 'config' never leaves us with zero parseable copies on disk.
+  if (previousRaw && previousRaw !== serialized) {
+    localStorage.setItem('config.bak', previousRaw);
+  }
+  localStorage.setItem('config', serialized);
 
   localStorage.setItem('time24Hr', time24hr);
 
