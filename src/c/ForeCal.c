@@ -75,7 +75,6 @@ static AppTimer *retry_timer = NULL;
 static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
 static time_t last_update_attempt;
-static bool qt_delay = false;
 static bool endpoint_configured = false;
 static uint8_t last_battery_percent = 0;
 static bool last_is_charging = false;
@@ -234,7 +233,7 @@ static void handle_status_timer(void *data) {
 #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Status timer event fired");
 #endif
-  if (status_timer != NULL && s_savedata.status != NULL && strlen(s_savedata.status) > 0)
+  if (status_timer != NULL && strlen(s_savedata.status) > 0)
     text_layer_set_text(status_layer, s_savedata.status);
   else {
 #ifdef DEBUG
@@ -281,7 +280,7 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
     }
     
   } else {
-    snprintf(err_msg, sizeof(s_savedata.status), "Data error:%d", dict_error);
+    snprintf(err_msg, sizeof(err_msg), "Data error:%d", dict_error);
   }
   
   text_layer_set_text(status_layer, err_msg);
@@ -309,83 +308,85 @@ static void set_daymode(bool daymode_on) {
 }
 
 static void update_sun_layer(struct tm *t) {
-  if (s_savedata.sun_rise_hour != 99 && s_savedata.sun_rise_min != 99 && 
-      s_savedata.sun_set_hour != 99 && s_savedata.sun_set_min != 99) {
-    
-    if (t == NULL) {
-      // Get current time
-      time_t temp;
-      temp = time(NULL);
-      t = localtime(&temp);
-    }
-    
-    bool daytime = true;
-    
-    if (t->tm_hour < s_savedata.sun_rise_hour || 
-          (t->tm_hour == s_savedata.sun_rise_hour && t->tm_min <= s_savedata.sun_rise_min) ||
-        t->tm_hour > s_savedata.sun_set_hour || 
-          (t->tm_hour == s_savedata.sun_set_hour && t->tm_min >= s_savedata.sun_set_min))
-      daytime = false;
-    
-    if ((force_sun_update && sun_update_count >= 4) || (daytime && prev_daytime != 1) || 
-        (!daytime && prev_daytime != 0)) {
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Updating sun layer");
-      
-      if (sun_bitmap) {
-        gbitmap_destroy(sun_bitmap);
-        sun_bitmap = NULL;
-      }
-      
-      if (daytime) {
-        
-        // Day
-        if (clock_is_24h_style())
-          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d", 
-                   s_savedata.sun_set_hour, s_savedata.sun_set_min);
-        else
-          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d%s", 
-                   (((s_savedata.sun_set_hour + 11) % 12) + 1), s_savedata.sun_set_min, 
-                   (s_savedata.sun_set_hour >= 12 ? "P" : "a"));
-          
-        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
-        prev_daytime = 1;
-        
-      } else {
-        
-        // Night
-        if (clock_is_24h_style())
-          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d", 
-                   s_savedata.sun_rise_hour, s_savedata.sun_rise_min);
-        else 
-          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d%s", 
-                   (((s_savedata.sun_rise_hour + 11) % 12) + 1), s_savedata.sun_rise_min, 
-                   (s_savedata.sun_rise_hour >= 12 ? "P" : "a"));
-        
-        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
-        prev_daytime = 0;
-        
-      }
-
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", s_savedata.sun_rise_set);
-      
-      if (s_savedata.auto_daymode) {
-        s_savedata.daymode = daytime;
-        set_daymode(daytime);
-      }
-      
-      bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
-      text_layer_set_text(sun_rise_set_layer, s_savedata.sun_rise_set);
-      layer_set_hidden(bitmap_layer_get_layer(sun_layer), false);
-      
-      force_sun_update = false;
-      sun_update_count = 0;
-    } else if (!force_sun_update && sun_update_count >= 4) {
-      // Reset update count if not forcing update or not due for update
-      sun_update_count = 0;
-    }
-  } else {
+  if (s_savedata.sun_rise_hour == 99 || s_savedata.sun_rise_min == 99 ||
+      s_savedata.sun_set_hour == 99 || s_savedata.sun_set_min == 99) {
     text_layer_set_text(sun_rise_set_layer, "");
     layer_set_hidden(bitmap_layer_get_layer(sun_layer), true);
+    return;
+  }
+
+  if (t == NULL) {
+    time_t temp = time(NULL);
+    t = localtime(&temp);
+  }
+
+  bool daytime = true;
+  if (t->tm_hour < s_savedata.sun_rise_hour ||
+        (t->tm_hour == s_savedata.sun_rise_hour && t->tm_min <= s_savedata.sun_rise_min) ||
+      t->tm_hour > s_savedata.sun_set_hour ||
+        (t->tm_hour == s_savedata.sun_set_hour && t->tm_min >= s_savedata.sun_set_min))
+    daytime = false;
+
+  // Always reconcile daymode against current time when auto_daymode is on. Doing this
+  // unconditionally (rather than only on the prev_daytime transition) means a stale or
+  // out-of-sync s_savedata.daymode — for instance from a WEATHER_DAYMODE_KEY message that
+  // disagreed with local time — gets corrected on the next tick instead of needing a
+  // watchface restart. set_daymode is a pair of layer_set_hidden calls; cheap when no-op.
+  if (s_savedata.auto_daymode && s_savedata.daymode != daytime) {
+    s_savedata.daymode = daytime;
+    set_daymode(daytime);
+  }
+
+  // Sun bitmap and rise/set text only need refreshing on transition (or when location
+  // changed). Loading a bitmap resource every minute would be wasteful.
+  bool transition = (daytime ? prev_daytime != 1 : prev_daytime != 0);
+  bool force = (force_sun_update && sun_update_count >= 4);
+
+  if (transition || force) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Updating sun layer");
+
+    if (sun_bitmap) {
+      gbitmap_destroy(sun_bitmap);
+      sun_bitmap = NULL;
+    }
+
+    // Constrain to real clock ranges before formatting. The fields are uint8_t, so
+    // without this the compiler assumes 0-255 (3 digits) and flags the fixed 7-byte
+    // sun_rise_set as a possible truncation target; the modulo also guards against a
+    // corrupt persisted hour/min. The field cannot simply be widened because it sits
+    // mid-struct in the persisted savedata_t and would shift every following field.
+    if (daytime) {
+      int h = s_savedata.sun_set_hour % 24;
+      int m = s_savedata.sun_set_min % 60;
+      if (clock_is_24h_style())
+        snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d", h, m);
+      else
+        snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d%s",
+                 ((h + 11) % 12) + 1, m, (h >= 12 ? "P" : "a"));
+      sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
+      prev_daytime = 1;
+    } else {
+      int h = s_savedata.sun_rise_hour % 24;
+      int m = s_savedata.sun_rise_min % 60;
+      if (clock_is_24h_style())
+        snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d", h, m);
+      else
+        snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d%s",
+                 ((h + 11) % 12) + 1, m, (h >= 12 ? "P" : "a"));
+      sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
+      prev_daytime = 0;
+    }
+
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", s_savedata.sun_rise_set);
+
+    bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
+    text_layer_set_text(sun_rise_set_layer, s_savedata.sun_rise_set);
+    layer_set_hidden(bitmap_layer_get_layer(sun_layer), false);
+
+    force_sun_update = false;
+    sun_update_count = 0;
+  } else if (!force_sun_update && sun_update_count >= 4) {
+    sun_update_count = 0;
   }
 }
 
@@ -574,7 +575,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         }
         s_savedata.icon = new_tuple->value->uint8;
         layer_set_hidden(bitmap_layer_get_layer(icon_layer), (s_savedata.icon == 0));
-        if (s_savedata.icon > 0) {
+        if (s_savedata.icon > 0 && s_savedata.icon < ARRAY_LENGTH(WEATHER_ICONS)) {
           icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[s_savedata.icon]);
           bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
           layer_mark_dirty(bitmap_layer_get_layer(icon_layer));
@@ -584,9 +585,11 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
     case WEATHER_STATUS_KEY:
       // Save status for displaying after showing City for 5 seconds
       strncpy(s_savedata.status, new_tuple->value->cstring, sizeof(s_savedata.status));
+      s_savedata.status[sizeof(s_savedata.status) - 1] = '\0';
       break;
     case WEATHER_CITY_KEY:
       strncpy(s_savedata.city, new_tuple->value->cstring, sizeof(s_savedata.city));
+      s_savedata.city[sizeof(s_savedata.city) - 1] = '\0';
       text_layer_set_text(status_layer, s_savedata.city);
       // Show City for 5 seconds and then replace with Status
       if (status_timer) {
@@ -598,25 +601,30 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_CURR_TEMP_KEY:
       strncpy(s_savedata.curr_temp, new_tuple->value->cstring, sizeof(s_savedata.curr_temp));
+      s_savedata.curr_temp[sizeof(s_savedata.curr_temp) - 1] = '\0';
       text_layer_set_text(curr_temp_layer, s_savedata.curr_temp);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", s_savedata.curr_temp);
       break;
     case WEATHER_FORECAST_DAY_KEY:
       strncpy(s_savedata.forecast_day, new_tuple->value->cstring, sizeof(s_savedata.forecast_day));
+      s_savedata.forecast_day[sizeof(s_savedata.forecast_day) - 1] = '\0';
       text_layer_set_text(forecast_day_layer, s_savedata.forecast_day);
       break;
     case WEATHER_HIGH_TEMP_KEY:
       strncpy(s_savedata.high_temp, new_tuple->value->cstring, sizeof(s_savedata.high_temp));
+      s_savedata.high_temp[sizeof(s_savedata.high_temp) - 1] = '\0';
       text_layer_set_text(high_temp_layer, s_savedata.high_temp);
       layer_set_hidden(text_layer_get_layer(high_label_layer), strlen(s_savedata.high_temp) == 0);
       break;
     case WEATHER_LOW_TEMP_KEY:
       strncpy(s_savedata.low_temp, new_tuple->value->cstring, sizeof(s_savedata.low_temp));
+      s_savedata.low_temp[sizeof(s_savedata.low_temp) - 1] = '\0';
       text_layer_set_text(low_temp_layer, s_savedata.low_temp);
       layer_set_hidden(text_layer_get_layer(low_label_layer), strlen(s_savedata.low_temp) == 0);
       break;
     case WEATHER_CONDITION_KEY:
       strncpy(s_savedata.condition, new_tuple->value->cstring, sizeof(s_savedata.condition));
+      s_savedata.condition[sizeof(s_savedata.condition) - 1] = '\0';
       text_layer_set_text(condition_layer, s_savedata.condition);
       break;
     case WEATHER_DAYMODE_KEY:
@@ -704,6 +712,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WIND_SPEED_KEY:
       strncpy(s_savedata.wind_speed, new_tuple->value->cstring, sizeof(s_savedata.wind_speed));
+      s_savedata.wind_speed[sizeof(s_savedata.wind_speed) - 1] = '\0';
       text_layer_set_text(wind_speed_layer, s_savedata.wind_speed);
       break;
     case FORECAST_HOUR_KEY:
@@ -819,16 +828,6 @@ static bool quiet_time_active() {
   }
 }
 
-// Calculates the Quiet Time duration in seconds
-static uint16_t quiet_time_duration() {
-  uint16_t qt_start = (s_savedata.qt_start_hour * 60) + s_savedata.qt_start_min;
-  uint16_t qt_end = (s_savedata.qt_end_hour * 60) + s_savedata.qt_end_min;
-  if (qt_start > qt_end)
-    return (((24*60) - qt_start) + qt_end) * 60;
-  else
-    return (qt_end - qt_start) * 60;
-}
-
 // Handle clock change events
 static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
@@ -854,53 +853,44 @@ static void handle_tick(struct tm *t, TimeUnits units_changed) {
       uint16_t interval_minutes = (s_savedata.weather_update_interval > 0) ? s_savedata.weather_update_interval : 60;
       time_t interval_seconds = (time_t)(interval_minutes * 60);
 
-      // Calculate time since last successful update
-      time_t time_since_update = (s_savedata.last_update > 0) ? (now - s_savedata.last_update) : interval_seconds;
+      // Time since last successful update. Treat "no prior update" and a future
+      // last_update (clock went backwards, e.g. timezone change overnight) the same as
+      // "interval elapsed" so we always recover into an update on the next non-QT tick.
+      time_t time_since_update;
+      if (s_savedata.last_update <= 0 || s_savedata.last_update > now) {
+        time_since_update = interval_seconds;
+      } else {
+        time_since_update = now - s_savedata.last_update;
+      }
 
-      // Check if we're currently in quiet time
       bool in_quiet_time = quiet_time_active();
-
-      // Determine if quiet time blocks updates (only if qt_fetch_weather is false)
       bool qt_blocks_update = in_quiet_time && !s_savedata.qt_fetch_weather;
 
-      // Check for special update triggers (midnight or forecast transition time)
+      // Special triggers fire even inside QT: midnight rolls the forecast day, and the
+      // forecast hour switches Today/Tomorrow display.
       bool is_midnight = (t->tm_hour == 0 && t->tm_min == 0);
       bool is_forecast_transition = (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min);
       bool special_trigger = is_midnight || is_forecast_transition;
 
-      // Check if interval-based update is due
       bool interval_due = (time_since_update >= interval_seconds);
 
-      // Handle quiet time delay: if an update was skipped during quiet time,
-      // delay the next update by the quiet time duration to avoid all users
-      // updating simultaneously when quiet time ends
-      if (qt_delay && interval_due) {
-        time_t extended_interval = interval_seconds + quiet_time_duration();
-        interval_due = (time_since_update >= extended_interval);
-      }
-
-      // Decide whether to update
       if (special_trigger) {
-        // Always update at midnight and forecast transition time
-        // These trigger forecast day switching without necessarily making web requests
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update: special trigger (%s)",
                 is_midnight ? "midnight" : "forecast transition");
         last_update_attempt = now - (now % 60);
         update_weather();
-        qt_delay = false;
-      } else if (interval_due) {
-        if (qt_blocks_update) {
-          // Update is due but quiet time is blocking - set flag to delay next update
-          APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update skipped: quiet time active");
-          qt_delay = true;
-        } else {
-          // Normal interval-based update
-          APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update: interval elapsed (%d min since last)",
-                  (int)(time_since_update / 60));
-          last_update_attempt = now - (now % 60);
-          update_weather();
-          qt_delay = false;
-        }
+      } else if (interval_due && !qt_blocks_update) {
+        // Out of QT (or QT doesn't block fetches) and interval elapsed - update.
+        // Earlier versions extended the post-QT interval by the full QT duration as
+        // anti-thundering-herd, but that could leave weather stale for hours after QT
+        // ended (especially with short intervals + long QT) and any stale flag would
+        // silently suppress recovery. A single user has no herd to spread.
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update: interval elapsed (%d min since last)",
+                (int)(time_since_update / 60));
+        last_update_attempt = now - (now % 60);
+        update_weather();
+      } else if (interval_due && qt_blocks_update) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update skipped: quiet time active");
       }
     }
     
@@ -1071,7 +1061,7 @@ static void handle_batt_update(BatteryChargeState batt_status) {
 static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len, int prev_mon_len, GColor font_color, int ypos, int highlight_day) {
   
   int curr_date;
-  char curr_date_str[3];
+  char curr_date_str[12];
   GColor back_color;
   
   graphics_context_set_text_color(ctx, font_color);
@@ -1111,7 +1101,7 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
     }
     
     // Draw the date text in the correct calendar cell
-    snprintf(curr_date_str, 3, "%d", curr_date);
+    snprintf(curr_date_str, sizeof(curr_date_str), "%d", curr_date);
     graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
                        GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, ypos, PBL_IF_RECT_ELSE(19, 16), 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     
@@ -1261,8 +1251,28 @@ static void window_load(Window *window) {
   last_battery_percent = s_savedata.last_battery_percent;
   last_is_charging = s_savedata.last_is_charging;
   endpoint_configured = s_savedata.endpoint_configured;
-  
-  GRect bounds = layer_get_bounds(window_layer); 
+
+  // Defensively sanitize persisted data before it is used below. Torn/partial
+  // persist writes (a known issue on some watches) can leave string fields with no
+  // null terminator or numeric fields out of range. A non-terminated string is a
+  // crash-on-open: strlen() inside the MyTupletCString() macros in initial_values[]
+  // runs off the end of the field, producing a bogus tuple length that overflows
+  // sync_buffer in app_sync_init(); the same string later faults in the text renderer.
+  s_savedata.status[sizeof(s_savedata.status) - 1] = '\0';
+  s_savedata.city[sizeof(s_savedata.city) - 1] = '\0';
+  s_savedata.curr_temp[sizeof(s_savedata.curr_temp) - 1] = '\0';
+  s_savedata.sun_rise_set[sizeof(s_savedata.sun_rise_set) - 1] = '\0';
+  s_savedata.forecast_day[sizeof(s_savedata.forecast_day) - 1] = '\0';
+  s_savedata.high_temp[sizeof(s_savedata.high_temp) - 1] = '\0';
+  s_savedata.low_temp[sizeof(s_savedata.low_temp) - 1] = '\0';
+  s_savedata.condition[sizeof(s_savedata.condition) - 1] = '\0';
+  s_savedata.wind_speed[sizeof(s_savedata.wind_speed) - 1] = '\0';
+
+  // icon indexes WEATHER_ICONS[] directly; an out-of-range value reads past the
+  // array and hands a garbage resource id to gbitmap_create_with_resource().
+  if (s_savedata.icon >= ARRAY_LENGTH(WEATHER_ICONS)) s_savedata.icon = 0;
+
+  GRect bounds = layer_get_bounds(window_layer);
   
   // Setup 'current' layer (time, date, current temp, battery, bluetooth)
   current_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 0, bounds.size.w, 58), bounds)); 

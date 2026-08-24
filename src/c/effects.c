@@ -262,7 +262,10 @@ void effect_invert_brightness(GContext* ctx,  GRect position, void* param) {
          
          if (!gcolor_equal(pixel, GColorBlack) && !gcolor_equal(pixel, GColorWhite)) {
            // Only apply if not black/white (add effect_invert_bw_only for that too)
-           
+           // Default to the original color so any pixel without an explicit mapping
+           // below is left unchanged instead of written from an uninitialized value.
+           pixel_new = pixel;
+
            // Color spread is not even, so need to handcraft the opposing brightness of colors,
            // which is probably subjective and open for improvement
            if (gcolor_equal(pixel, GColorOxfordBlue))
@@ -555,7 +558,7 @@ void effect_mask(GContext* ctx, GRect position, void* param) {
 
 void effect_fps(GContext* ctx, GRect position, void* param) {
   static GFont font = NULL;
-  static char buff[16];
+  static char buff[24];
   time_t tt;
   uint16_t ms;
   
