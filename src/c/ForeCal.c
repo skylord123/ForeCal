@@ -1,6 +1,7 @@
 #include "pebble.h"
 #include "common.h"
 #include "effect_layer.h"
+#include "layout.h"
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
@@ -15,6 +16,7 @@ static bool loading = false;
 
 static Layer *current_layer = NULL;
 static TextLayer *clock_layer = NULL;
+static GFont clock_font = NULL;
 static TextLayer *pm_layer = NULL;
 static TextLayer *week_layer = NULL;
 static TextLayer *date_layer = NULL;
@@ -1096,14 +1098,14 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
       }
       
       graphics_context_set_fill_color(ctx, back_color);
-      graphics_fill_rect(ctx, GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, ypos + 4, PBL_IF_RECT_ELSE(19, 16), 11), 0, GCornerNone);
+      graphics_fill_rect(ctx, GRect(d * LAYOUT_CAL_CELL_PITCH, ypos + LAYOUT_CAL_HL_DY, LAYOUT_CAL_CELL_W, LAYOUT_CAL_HL_H), 0, GCornerNone);
       
     }
     
     // Draw the date text in the correct calendar cell
     snprintf(curr_date_str, sizeof(curr_date_str), "%d", curr_date);
-    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
-                       GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, ypos, PBL_IF_RECT_ELSE(19, 16), 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(LAYOUT_CAL_FONT_BOLD), 
+                       GRect(d * LAYOUT_CAL_CELL_PITCH, ypos, LAYOUT_CAL_CELL_W, LAYOUT_CAL_TEXT_H), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     
     if (curr_date == highlight_day) graphics_context_set_text_color(ctx, font_color);
   }
@@ -1128,18 +1130,11 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   
   // Paint inverted rows background (Pebble Times have rounded corners so need to draw calendar more compact)
   graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, GRect(0, 11, bounds.size.w, 11), 0, GCornerNone);
-#ifndef PBL_COLOR
-  graphics_fill_rect(ctx, GRect(0, 35, bounds.size.w, 11), 0, GCornerNone);
-  rowtexttop1 = 7;
-  rowtexttop2 = 19;
-  rowtexttop3 = 31;
-#else
-  graphics_fill_rect(ctx, GRect(0, 33, bounds.size.w, 13), 0, GCornerNone);
-  rowtexttop1 = 7;
-  rowtexttop2 = 18;
-  rowtexttop3 = 29;
-#endif
+  graphics_fill_rect(ctx, GRect(0, LAYOUT_CAL_BAND1_Y, bounds.size.w, LAYOUT_CAL_BAND1_H), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, LAYOUT_CAL_BAND2_Y, bounds.size.w, LAYOUT_CAL_BAND2_H), 0, GCornerNone);
+  rowtexttop1 = LAYOUT_CAL_ROW1_Y;
+  rowtexttop2 = LAYOUT_CAL_ROW2_Y;
+  rowtexttop3 = LAYOUT_CAL_ROW3_Y;
   
   // Get current time
   struct tm *t;
@@ -1153,12 +1148,12 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   // Draw week day names
   for (int d = 0; d < 7; d++) {
     if (t->tm_wday == ((d + s_savedata.startday) % 7))
-      curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+      curr_font = fonts_get_system_font(LAYOUT_CAL_FONT_BOLD);
     else
-      curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+      curr_font = fonts_get_system_font(LAYOUT_CAL_FONT);
     graphics_draw_text(ctx, weekdays[(d + s_savedata.startday) % 7], curr_font, 
-                       GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, -4, PBL_IF_RECT_ELSE(19, 16 +
-                             ((d+s_savedata.startday) == 3 ? 1 : 0)), 14), 
+                       GRect(d * LAYOUT_CAL_CELL_PITCH, LAYOUT_CAL_HDR_Y, LAYOUT_CAL_CELL_W +
+                             PBL_IF_ROUND_ELSE(((d+s_savedata.startday) == 3 ? 1 : 0), 0), LAYOUT_CAL_TEXT_H), 
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
   
@@ -1275,160 +1270,165 @@ static void window_load(Window *window) {
   GRect bounds = layer_get_bounds(window_layer);
   
   // Setup 'current' layer (time, date, current temp, battery, bluetooth)
-  current_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 0, bounds.size.w, 58), bounds)); 
+  current_layer = layer_create(LAYOUT_CURRENT_FRAME); 
   
-  clock_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(-1, -13, 126, 50), GRect((bounds.size.w-126)/2, 13, 126, 50)));
+  clock_layer = text_layer_create(LAYOUT_CLOCK_FRAME);
   text_layer_set_text_color(clock_layer, GColorWhite);
   text_layer_set_background_color(clock_layer, GColorClear);
-  text_layer_set_font(clock_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
+#ifdef LAYOUT_CLOCK_CUSTOM_FONT
+  clock_font = fonts_load_custom_font(resource_get_handle(LAYOUT_CLOCK_CUSTOM_FONT));
+#else
+  clock_font = fonts_get_system_font(LAYOUT_CLOCK_FONT);
+#endif
+  text_layer_set_font(clock_layer, clock_font);
   text_layer_set_text_alignment(clock_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(clock_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(clock_layer));
   
-  pm_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(123, 23, 20, 15), GRect(bounds.size.w-((bounds.size.w-126)/2), 48, 20, 15)));
+  pm_layer = text_layer_create(LAYOUT_PM_FRAME);
   text_layer_set_text_color(pm_layer, GColorWhite);
   text_layer_set_background_color(pm_layer, GColorClear);
-  text_layer_set_font(pm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_font(pm_layer, fonts_get_system_font(LAYOUT_PM_FONT));
   text_layer_set_text_alignment(pm_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
   
-  week_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(122, 23, 24, 15), GRect(bounds.size.w-((bounds.size.w-120)/2), 48, 24, 15)));
+  week_layer = text_layer_create(LAYOUT_WEEK_FRAME);
   text_layer_set_text_color(week_layer, GColorWhite);
   text_layer_set_background_color(week_layer, GColorClear);
-  text_layer_set_font(week_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_font(week_layer, fonts_get_system_font(LAYOUT_WEEK_FONT));
   text_layer_set_text_alignment(week_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(week_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(week_layer));
   
-  date_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(54, 30, 89, 26), GRect((bounds.size.w-89)/2, 2, 89, 26)));
+  date_layer = text_layer_create(LAYOUT_DATE_FRAME);
   text_layer_set_text_color(date_layer, GColorWhite);
   text_layer_set_background_color(date_layer, GColorClear);
-  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  text_layer_set_text_alignment(date_layer, PBL_IF_RECT_ELSE(GTextAlignmentRight, GTextAlignmentCenter));
+  text_layer_set_font(date_layer, fonts_get_system_font(LAYOUT_DATE_FONT));
+  text_layer_set_text_alignment(date_layer, LAYOUT_DATE_ALIGN);
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
   
-  bt_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(128, 0, 11, 18), GRect(156, 112, 11, 18)));
+  bt_layer = bitmap_layer_create(LAYOUT_BT_FRAME);
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
   bt_connected = bluetooth_connection_service_peek();
   update_bt_icon(bt_connected);
   
-  batt_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(126, 18, 16, 8), GRect(8, 112, 16, 8)));
+  batt_layer = bitmap_layer_create(LAYOUT_BATT_FRAME);
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
   BatteryChargeState batt_state = battery_state_service_peek();
   layer_set_hidden(bitmap_layer_get_layer(batt_layer), s_savedata.show_batt);
   handle_batt_update(batt_state);
   battery_state_service_subscribe(handle_batt_update);
   
-  curr_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 30, 45, 26), GRect((bounds.size.w-45)/2, 150, 45, 26)));
+  curr_temp_layer = text_layer_create(LAYOUT_CURR_TEMP_FRAME);
   text_layer_set_text_color(curr_temp_layer, GColorWhite);
   text_layer_set_background_color(curr_temp_layer, GColorClear);
-  text_layer_set_font(curr_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  text_layer_set_text_alignment(curr_temp_layer, PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentCenter));
+  text_layer_set_font(curr_temp_layer, fonts_get_system_font(LAYOUT_CURR_TEMP_FONT));
+  text_layer_set_text_alignment(curr_temp_layer, LAYOUT_CURR_TEMP_ALIGN);
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
   
-  wind_speed_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(45, 34, 45, 26), GRect((bounds.size.w-60)/2, 5, 45, 26)));
+  wind_speed_layer = text_layer_create(LAYOUT_WIND_FRAME);
   text_layer_set_text_color(wind_speed_layer, GColorWhite);
   text_layer_set_background_color(wind_speed_layer, GColorClear);
-  text_layer_set_font(wind_speed_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_text_alignment(wind_speed_layer, PBL_IF_RECT_ELSE(GTextAlignmentCenter, GTextAlignmentLeft));
+  text_layer_set_font(wind_speed_layer, fonts_get_system_font(LAYOUT_WIND_FONT));
+  text_layer_set_text_alignment(wind_speed_layer, LAYOUT_WIND_ALIGN);
   text_layer_set_overflow_mode(wind_speed_layer, GTextOverflowModeFill);
   layer_set_hidden(text_layer_get_layer(wind_speed_layer), !s_savedata.show_wind);
-#ifndef PBL_ROUND
-  // Only add for rectangular Pebbles (no room in round design)
+#if LAYOUT_SHOW_WIND_LAYER
+  // Only added where the design has room for it (not on the round displays)
   layer_add_child(current_layer, text_layer_get_layer(wind_speed_layer));
 #endif
   
   layer_add_child(window_layer, current_layer);
   
   // Setup forecast layer (High/Low Temp, conditions, sunrise/sunset)
-  forecast_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 57, bounds.size.w, 64), GRect(0, 63, bounds.size.w, bounds.size.h-63)));
+  forecast_layer = layer_create(LAYOUT_FORECAST_FRAME);
 
-  status_bg_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, bounds.size.w, 17), GRect(0, -4, bounds.size.w, 17)));
+  status_bg_layer = text_layer_create(LAYOUT_STATUS_BG_FRAME);
   text_layer_set_background_color(status_bg_layer, GColorWhite);
   layer_add_child(forecast_layer, text_layer_get_layer(status_bg_layer));
   
 #if (defined(PBL_HEALTH) && defined(PBL_COLOR))
-  steps_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, bounds.size.w, 17), GRect(0, -4, bounds.size.w, 17)));
+  steps_layer = layer_create(LAYOUT_STEPS_FRAME);
   layer_add_child(forecast_layer, steps_layer);
   layer_set_update_proc(steps_layer, draw_steps_progress);
 #endif
   
-  forecast_day_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, 64, 17), GRect(0, -4, (bounds.size.w/2)-20, 17)));
+  forecast_day_layer = text_layer_create(LAYOUT_FORECAST_DAY_FRAME);
   text_layer_set_text_color(forecast_day_layer, GColorBlack);
   text_layer_set_background_color(forecast_day_layer, GColorClear);
-  text_layer_set_font(forecast_day_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+  text_layer_set_font(forecast_day_layer, fonts_get_system_font(LAYOUT_FORECAST_DAY_FONT));
   text_layer_set_text_alignment(forecast_day_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(forecast_day_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(forecast_day_layer));
   
-  status_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(60, -4, 84, 17), GRect((bounds.size.w/2)+20, -4, (bounds.size.w/2)-20, 17)));
+  status_layer = text_layer_create(LAYOUT_STATUS_FRAME);
   text_layer_set_text_color(status_layer, GColorBlack);
   text_layer_set_background_color(status_layer, GColorClear);
-  text_layer_set_font(status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_font(status_layer, fonts_get_system_font(LAYOUT_STATUS_FONT));
   text_layer_set_text_alignment(status_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(status_layer, GTextOverflowModeTrailingEllipsis);
   layer_add_child(forecast_layer, text_layer_get_layer(status_layer));
   
-  high_label_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(1, 6, 10, 24), GRect(2, 6, 10, 24)));
+  high_label_layer = text_layer_create(LAYOUT_HIGH_LABEL_FRAME);
   text_layer_set_text_color(high_label_layer, GColorWhite);
   text_layer_set_background_color(high_label_layer, GColorClear);
-  text_layer_set_font(high_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_font(high_label_layer, fonts_get_system_font(LAYOUT_TEMP_FONT));
   text_layer_set_text_alignment(high_label_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(high_label_layer, GTextOverflowModeFill);
   text_layer_set_text(high_label_layer, "H");
   layer_set_hidden(text_layer_get_layer(high_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(high_label_layer));
   
-  high_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(9, 6, 45, 24), GRect(10, 6, 45, 24)));
+  high_temp_layer = text_layer_create(LAYOUT_HIGH_TEMP_FRAME);
   text_layer_set_text_color(high_temp_layer, GColorWhite);
   text_layer_set_background_color(high_temp_layer, GColorClear);
-  text_layer_set_font(high_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_font(high_temp_layer, fonts_get_system_font(LAYOUT_TEMP_FONT));
   text_layer_set_text_alignment(high_temp_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(high_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(high_temp_layer));
   
-  low_label_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(1, 23, 10, 24), GRect(122, 6, 10, 24)));
+  low_label_layer = text_layer_create(LAYOUT_LOW_LABEL_FRAME);
   text_layer_set_text_color(low_label_layer, GColorWhite);
   text_layer_set_background_color(low_label_layer, GColorClear);
-  text_layer_set_font(low_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_font(low_label_layer, fonts_get_system_font(LAYOUT_TEMP_FONT));
   text_layer_set_text_alignment(low_label_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(low_label_layer, GTextOverflowModeFill);
   text_layer_set_text(low_label_layer, "L");
   layer_set_hidden(text_layer_get_layer(low_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(low_label_layer));
   
-  low_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(9, 23, 45, 24), GRect(130, 6, 45, 24)));
+  low_temp_layer = text_layer_create(LAYOUT_LOW_TEMP_FRAME);
   text_layer_set_text_color(low_temp_layer, GColorWhite);
   text_layer_set_background_color(low_temp_layer, GColorClear);
-  text_layer_set_font(low_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_font(low_temp_layer, fonts_get_system_font(LAYOUT_TEMP_FONT));
   text_layer_set_text_alignment(low_temp_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(low_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(low_temp_layer));
   
-  sun_rise_set_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(101, 26, 47, 18), GRect(100, 86, 47, 18)));
+  sun_rise_set_layer = text_layer_create(LAYOUT_SUN_TEXT_FRAME);
   text_layer_set_text_color(sun_rise_set_layer, GColorWhite);
   text_layer_set_background_color(sun_rise_set_layer, GColorClear);
-  text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(LAYOUT_SUN_TEXT_FONT));
   text_layer_set_text_alignment(sun_rise_set_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(sun_rise_set_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(sun_rise_set_layer));
   
-  icon_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(66, 16, 32, 32), GRect((bounds.size.w-34)/2, 0, 34, 32)));
+  icon_layer = bitmap_layer_create(LAYOUT_ICON_FRAME);
   bitmap_layer_set_alignment(icon_layer, GAlignCenter);
   bitmap_layer_set_background_color(icon_layer, GColorBlack);
   layer_add_child(forecast_layer, bitmap_layer_get_layer(icon_layer));
   
-  sun_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(115, 17, 20, 14), GRect(50, 92, 20, 14)));
+  sun_layer = bitmap_layer_create(LAYOUT_SUN_ICON_FRAME);
   layer_add_child(forecast_layer, bitmap_layer_get_layer(sun_layer));
   
-  condition_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 43, 144, 24), GRect(0, 26, bounds.size.w, 24)));
+  condition_layer = text_layer_create(LAYOUT_CONDITION_FRAME);
   text_layer_set_text_color(condition_layer, GColorWhite);
   text_layer_set_background_color(condition_layer, GColorClear);
-  text_layer_set_font(condition_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_font(condition_layer, fonts_get_system_font(LAYOUT_CONDITION_FONT));
   text_layer_set_text_alignment(condition_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(condition_layer, GTextOverflowModeTrailingEllipsis);
   layer_add_child(forecast_layer, text_layer_get_layer(condition_layer));
@@ -1442,7 +1442,7 @@ static void window_load(Window *window) {
 #endif
   
   // Setup 3 week calendar layer
-  cal_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 122, 144, 47), GRect((bounds.size.w-124)/2, 111, 124, 44)));
+  cal_layer = layer_create(LAYOUT_CAL_FRAME);
   layer_add_child(window_layer, cal_layer);
   
   layer_set_update_proc(cal_layer, cal_layer_draw);
@@ -1570,6 +1570,13 @@ static void window_unload(Window *window) {
   
   // Release UI resources
   text_layer_destroy(clock_layer);
+#ifdef LAYOUT_CLOCK_CUSTOM_FONT
+  // Unloaded after its text layer, so nothing can still reference it.
+  if (clock_font) {
+    fonts_unload_custom_font(clock_font);
+    clock_font = NULL;
+  }
+#endif
   text_layer_destroy(date_layer);
   text_layer_destroy(pm_layer);
   text_layer_destroy(curr_temp_layer);
