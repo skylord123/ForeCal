@@ -9,6 +9,19 @@ ForeCal Reloaded also includes optional **remote endpoint support**, allowing it
 Designed for users who want rich glanceable info on their wrist, with the flexibility to integrate into self-hosted or custom backends.
 
 
+Supported watches
+-----------------
+
+| Platform | Watches | Display |
+| --- | --- | --- |
+| `aplite` | Pebble, Pebble Steel | 144x168 B&W |
+| `basalt` | Pebble Time, Pebble Time Steel | 144x168 color |
+| `chalk` | Pebble Time Round | 180x180 color, round |
+| `diorite` | Pebble 2 | 144x168 B&W |
+| `flint` | Pebble 2 Duo | 144x168 B&W |
+| `emery` | Pebble Time 2 | 200x228 color |
+| `gabbro` | Pebble Round 2 | 260x260 color, round |
+
 Support
 -------
 

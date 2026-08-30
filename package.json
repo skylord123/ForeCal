@@ -205,6 +205,24 @@
                     "file": "images/BT.png",
                     "name": "IMAGE_BT",
                     "type": "bitmap"
+                },
+                {
+                    "characterRegex": "[0-9:]",
+                    "file": "fonts/Roboto-Bold.ttf",
+                    "name": "FONT_CLOCK_66",
+                    "targetPlatforms": [
+                        "emery"
+                    ],
+                    "type": "font"
+                },
+                {
+                    "characterRegex": "[0-9:]",
+                    "file": "fonts/Roboto-Bold.ttf",
+                    "name": "FONT_CLOCK_70",
+                    "targetPlatforms": [
+                        "gabbro"
+                    ],
+                    "type": "font"
                 }
             ]
         },
@@ -213,12 +231,15 @@
             "aplite",
             "basalt",
             "chalk",
-            "diorite"
+            "diorite",
+            "emery",
+            "flint",
+            "gabbro"
         ],
         "uuid": "ea2feff6-54b9-4d02-b048-fa6fba8892c6",
         "watchapp": {
             "watchface": true
         }
     },
-    "version": "6.0.0"
+    "version": "6.1"
 }
